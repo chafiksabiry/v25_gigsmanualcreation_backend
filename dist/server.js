@@ -11,7 +11,7 @@ const gigRoute_1 = __importDefault(require("./route/gigRoute"));
 const cors_1 = __importDefault(require("cors"));
 dotenv_1.default.config(); // Pour charger les variables d'environnement depuis un fichier .env
 const app = (0, express_1.default)();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5003;
 // Middleware pour parser le corps des requêtes en JSON
 app.use(body_parser_1.default.json());
 app.use((0, cors_1.default)());
