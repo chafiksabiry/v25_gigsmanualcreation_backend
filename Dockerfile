@@ -1,0 +1,22 @@
+FROM node:20
+
+WORKDIR /app
+
+COPY package*.json ./
+
+ENV PORT=3000
+ENV MONGO_URI=mongodb://harx:gcZ62rl8hoME@185.137.122.3:27017/V25_CompanySearchWizard
+
+ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j
+ENV CLOUDINARY_API_KEY=981166483223979
+ENV CLOUDINARY_API_SECRET=i3nxRvfOF1jjfLzMHKE8mP4aXVM
+
+RUN npm install
+
+COPY . .
+
+RUN npm run build
+
+EXPOSE 5003
+
+CMD ["npm", "start"]
