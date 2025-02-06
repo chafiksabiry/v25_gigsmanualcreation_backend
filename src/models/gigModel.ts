@@ -58,10 +58,10 @@ export interface IGig extends Document {
     territories: string[];
   };
   documentation: {
-    product: Array<{ name: string; url: string }> & { required: false };
-    process: Array<{ name: string; url: string }> & { required: false };
-    training: Array<{ name: string; url: string }> & { required: false };
-  };
+    product?: { name: string; url: string }[];
+    process?: { name: string; url: string }[];
+    training?: { name: string; url: string }[];
+  };  
   createdAt: Date;
   updatedAt: Date;
 }
