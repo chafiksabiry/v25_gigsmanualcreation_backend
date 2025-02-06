@@ -8,7 +8,7 @@ import cors from "cors";
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
 const app: Application = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5003;
 
 // Middleware pour parser le corps des requêtes en JSON
 app.use(bodyParser.json());
