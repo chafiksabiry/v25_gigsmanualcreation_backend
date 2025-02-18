@@ -1,7 +1,4 @@
 "use strict";
-// import { Request, Response } from "express";
-// import { GigService } from "../services/gigService";
-// import cloudinary from "../config/cloudinary";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GigController = void 0;
 const gigModel_1 = require("../models/gigModel");
