@@ -1,7 +1,14 @@
 import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
+import { GigRepository } from '../repositories/gigRepository';
 
 export class GigService {
+  private gigRepository: GigRepository;
+
+  constructor(gigRepository: GigRepository) {
+    this.gigRepository = gigRepository;
+  }
+
   static async createGig(gigData: any) {
     try {
       const newGig = new Gig(gigData);
@@ -42,24 +49,58 @@ export class GigService {
     }
   }
 
-  static async updateGig(id: string, gigData: any) {
+  static async updateGig(id: string, updateData: any) {
     try {
       if (!mongoose.Types.ObjectId.isValid(id)) {
         throw new Error("Invalid Gig ID format");
       }
 
-      const updatedGig = await Gig.findByIdAndUpdate(id, gigData, { new: true, runValidators: true });
+      // Utiliser $set pour la mise à jour partielle
+      const updatedGig = await Gig.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        {
+          new: true,
+          runValidators: true
+        }
+      );
+
       if (!updatedGig) {
         throw new Error("Gig not found");
       }
+
       return updatedGig;
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error in updateGig:", error);
-      if (error.name === "ValidationError") {
-        throw new Error("Validation failed: " + Object.values(error.errors).map((err: any) => err.message).join(", "));
-      }
-      throw new Error("Failed to update gig");
+      throw error;
     }
+  }
+
+  async updateGig(id: string, updateData: any): Promise<any> {
+    try {
+      const existingGig = await this.gigRepository.findById(id);
+      if (!existingGig) {
+        throw new Error('Gig not found');
+      }
+
+      const updatedGig = await this.gigRepository.update(id, updateData);
+      return updatedGig;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private cleanUpdateData(data: Partial<IGig>): Partial<IGig> {
+    // Supprimer les champs que vous ne voulez pas mettre à jour
+    const {
+      createdAt,
+      updatedAt,
+      __v,
+      _id,
+      ...cleanedData
+    } = data as any;
+
+    return cleanedData;
   }
 
   static async deleteGig(id: string) {
