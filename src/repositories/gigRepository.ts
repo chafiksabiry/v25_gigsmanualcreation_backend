@@ -1,24 +1,39 @@
-import { Gig } from '../models/gigModel';  // Utilise le modèle Gig et non IGig
+import { Gig as GigModel } from '../models/gigModel';
+import { Model } from 'mongoose';
+import { IGig } from '../models/gigModel';
 
 export class GigRepository {
+  private model: Model<IGig>;
+
+  constructor() {
+    this.model = GigModel;
+  }
+
   static async create(data: any) {
-    const gig = new Gig(data);  // Crée une instance de Gig
+    const gig = new GigModel(data);
     return await gig.save();
   }
 
-  static async getById(id: string) {
-    return await Gig.findById(id);  // Utilise Gig, pas IGig
+  async findById(id: string): Promise<any> {
+    return this.model.findById(id);
   }
 
   static async getAll() {
-    return await Gig.find();  // Utilise Gig, pas IGig
+    return await GigModel.find();
   }
 
-  static async update(id: string, data: any) {
-    return await Gig.findByIdAndUpdate(id, data, { new: true });  // Utilise Gig, pas IGig
+  async update(id: string, data: any): Promise<any> {
+    return this.model.findByIdAndUpdate(
+      id,
+      data,
+      {
+        new: true,
+        runValidators: true
+      }
+    );
   }
 
   static async delete(id: string) {
-    return await Gig.findByIdAndDelete(id);  // Utilise Gig, pas IGig
+    return await GigModel.findByIdAndDelete(id);
   }
 }
