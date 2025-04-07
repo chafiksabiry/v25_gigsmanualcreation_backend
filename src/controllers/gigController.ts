@@ -1,8 +1,19 @@
 import { Request, Response } from "express";
 import { GigService } from "../services/gigService";
 import mongoose from "mongoose";
+import { GigRepository } from "../repositories/gigRepository";
 
 export class GigController {
+  // static updateGig(arg0: string, updateGig: any) {
+  //     throw new Error("Method not implemented.");
+  // }
+  private gigService: GigService;
+  static gigService: any;
+
+  constructor() {
+    this.gigService = new GigService(new GigRepository());
+  }
+
   static async createGig(req: Request, res: Response) {
     try {
       if (!req.body.title || !req.body.description) {
@@ -45,22 +56,29 @@ export class GigController {
 
   static async updateGig(req: Request, res: Response) {
     try {
-      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      const id = req.params.id;
+      const updateData = req.body;
+      
+      if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
       }
 
-      if (!req.body.title && !req.body.description) {
-        return res.status(400).json({ message: "At least one field must be updated", data: null });
-      }
-
-      const updatedGig = await GigService.updateGig(req.params.id, req.body);
+      const updatedGig = await GigService.updateGig(id, updateData);
+      
       if (!updatedGig) {
         return res.status(404).json({ message: "Gig not found", data: null });
       }
-      res.status(200).json({ message: "Gig updated successfully", data: updatedGig });
+
+      return res.status(200).json({
+        message: "Gig updated successfully",
+        data: updatedGig
+      });
     } catch (error) {
-      console.error("Error in updateGig:", error);
-      res.status(500).json({ message: "Failed to update gig", data: null });
+      console.error('Error in updateGig:', error);
+      return res.status(500).json({
+        message: "Failed to update gig",
+        data: null
+      });
     }
   }
 
