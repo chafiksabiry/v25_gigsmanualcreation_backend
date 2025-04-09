@@ -8,6 +8,11 @@ export interface IGig extends Document {
     level: string;
     yearsExperience: string;
   };
+  skills: {
+    professional: string[];
+    technical: string[];
+    soft: string[];
+  };
   schedule: {
     days: string[];
     hours: string;
@@ -74,6 +79,11 @@ export const GigSchema = new Schema<IGig>(
     seniority: {
       level: { type: String, required: true },
       yearsExperience: { type: String, required: true },
+    },
+    skills: {
+      professional: [{ type: String }],
+      technical: [{ type: String }],
+      soft: [{ type: String }],
     },
     schedule: {
       days: [{ type: String }],
