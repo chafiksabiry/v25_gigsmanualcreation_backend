@@ -12,7 +12,10 @@ export interface IGig extends Document {
     professional: string[];
     technical: string[];
     soft: string[];
-    languages: string[];
+    languages: Array<{
+      name: string;
+      level: string;
+    }>;
   };
   schedule: {
     days: string[];
@@ -85,7 +88,10 @@ export const GigSchema = new Schema<IGig>(
       professional: [{ type: String }],
       technical: [{ type: String }],
       soft: [{ type: String }],
-      languages: [{ type: String }],
+      languages: [{
+        name: { type: String, required: true },
+        level: { type: String, required: true }
+      }]
     },
     schedule: {
       days: [{ type: String }],
