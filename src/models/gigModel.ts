@@ -12,6 +12,7 @@ export interface IGig extends Document {
     professional: string[];
     technical: string[];
     soft: string[];
+    languages: string[];
   };
   schedule: {
     days: string[];
@@ -73,21 +74,22 @@ export interface IGig extends Document {
 
 export const GigSchema = new Schema<IGig>(
   {
-    title: { type: String, required: true },
-    description: { type: String, required: true },
-    category: { type: String, required: true },
+    title: { type: String, required: false },
+    description: { type: String, required: false },
+    category: { type: String, required: false },
     seniority: {
-      level: { type: String, required: true },
-      yearsExperience: { type: String, required: true },
+      level: { type: String, required: false },
+      yearsExperience: { type: String, required: false },
     },
     skills: {
       professional: [{ type: String }],
       technical: [{ type: String }],
       soft: [{ type: String }],
+      languages: [{ type: String }],
     },
     schedule: {
       days: [{ type: String }],
-      hours: { type: String, required: true },
+      hours: { type: String, required: false },
       timeZones: [{ type: String }],
       flexibility: [{ type: String }],
       minimumHours: {
@@ -97,21 +99,20 @@ export const GigSchema = new Schema<IGig>(
       },
     },
     commission: {
-      base: { type: String, required: true },
-      baseAmount: { type: String, required: true },
+      base: { type: String, required: false },
+      baseAmount: { type: String, required: false },
       bonus: String,
       bonusAmount: String,
       structure: String,
-      currency: { type: String, required: true },
+      currency: { type: String, required: false },
       minimumVolume: {
-        amount: { type: String, required: true },
-        period: { type: String, required: true },
-        unit: { type: String, required: true },
+        amount: { type: String, required: false },
+        period: { type: String, required: false },
+        unit: { type: String, required: false },
       },
-      // Modifiez cette section
       transactionCommission: {
-        type: { type: String, required: true }, // type de commission, ex. 'percentage'
-        amount: { type: String, required: true }, // montant de la commission
+        type: { type: String, required: false },
+        amount: { type: String, required: false },
       },
     },
     leads: {
@@ -126,7 +127,7 @@ export const GigSchema = new Schema<IGig>(
       sources: [{ type: String }],
     },
     team: {
-      size: { type: String, required: true },
+      size: { type: String, required: false },
       structure: [
         {
           roleId: String,
