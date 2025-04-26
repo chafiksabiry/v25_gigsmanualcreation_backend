@@ -1,9 +1,12 @@
 import { Document, model, Schema } from 'mongoose';
+import mongoose from 'mongoose';
 
 export interface IGig extends Document {
   title: string;
   description: string;
   category: string;
+  userId: mongoose.Types.ObjectId;
+  companyId: mongoose.Types.ObjectId;
   seniority: {
     level: string;
     yearsExperience: string;
@@ -80,6 +83,8 @@ export const GigSchema = new Schema<IGig>(
     title: { type: String, required: false },
     description: { type: String, required: false },
     category: { type: String, required: false },
+    userId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    companyId: { type: mongoose.Schema.Types.ObjectId, default: null },
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
