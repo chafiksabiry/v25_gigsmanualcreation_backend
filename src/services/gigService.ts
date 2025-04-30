@@ -103,6 +103,23 @@ export class GigService {
     return cleanedData;
   }
 
+  static async getGigDestinationZoneById(id: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error("Invalid Gig ID format");
+      }
+
+      const gig = await Gig.findById(id).select('destination_zone');
+      if (!gig) {
+        throw new Error("Gig not found");
+      }
+      return gig.destination_zone;
+    } catch (error) {
+      console.error("Error in getGigDestinationZoneById:", error);
+      throw new Error("Failed to retrieve gig destination zone");
+    }
+  }
+
   static async deleteGig(id: string) {
     try {
       if (!mongoose.Types.ObjectId.isValid(id)) {

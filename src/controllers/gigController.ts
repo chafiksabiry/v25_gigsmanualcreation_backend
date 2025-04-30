@@ -82,6 +82,20 @@ export class GigController {
     }
   }
 
+  static async getGigDestinationZoneById(req: Request, res: Response) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ message: "Invalid Gig ID format", data: null });
+      }
+
+      const destinationZone = await GigService.getGigDestinationZoneById(req.params.id);
+      res.status(200).json({ message: "Gig destination zone retrieved successfully", data: destinationZone });
+    } catch (error) {
+      console.error("Error in getGigDestinationZoneById:", error);
+      res.status(500).json({ message: "Failed to retrieve gig destination zone", data: null });
+    }
+  }
+
   static async deleteGig(req: Request, res: Response) {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
