@@ -7,6 +7,7 @@ export interface IGig extends Document {
   category: string;
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
+  destination_zone: string[];
   seniority: {
     level: string;
     yearsExperience: string;
@@ -85,6 +86,7 @@ export const GigSchema = new Schema<IGig>(
     category: { type: String, required: false },
     userId: { type: mongoose.Schema.Types.ObjectId, default: null },
     companyId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    destination_zone: [{ type: String }],
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
