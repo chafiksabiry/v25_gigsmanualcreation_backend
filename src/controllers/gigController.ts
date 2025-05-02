@@ -2,6 +2,22 @@ import { Request, Response } from "express";
 import { GigService } from "../services/gigService";
 import mongoose from "mongoose";
 import { GigRepository } from "../repositories/gigRepository";
+import countries from 'i18n-iso-countries';
+
+// Initialiser les pays en français
+countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
+
+// Fonction pour obtenir le code alpha-2 à partir d'un nom de pays ou d'un code
+const getCountryCode = (input: string): string | null => {
+  // Si c'est déjà un code alpha-2 valide, le retourner en majuscules
+  if (countries.isValid(input) && input.length === 2) {
+    return input.toUpperCase();
+  }
+  
+  // Essayer de trouver le code à partir du nom du pays
+  const code = countries.getAlpha2Code(input, 'fr');
+  return code ? code.toUpperCase() : null;
+};
 
 export class GigController {
   // static updateGig(arg0: string, updateGig: any) {
@@ -19,6 +35,19 @@ export class GigController {
       if (!req.body.title || !req.body.description) {
         return res.status(400).json({ message: "Title and description are required", data: null });
       }
+
+      // Valider et convertir le code pays si fourni
+      if (req.body.destination_zone) {
+        const countryCode = getCountryCode(req.body.destination_zone);
+        if (!countryCode) {
+          return res.status(400).json({ 
+            message: "Le pays doit être un nom de pays valide ou un code alpha-2 (ex: France, FR, US)", 
+            data: null 
+          });
+        }
+        req.body.destination_zone = countryCode;
+      }
+
       const newGig = await GigService.createGig(req.body);
       res.status(201).json({ message: "Gig created successfully", data: newGig });
     } catch (error) {
@@ -88,8 +117,25 @@ export class GigController {
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
       }
 
-      const destinationZone = await GigService.getGigDestinationZoneById(req.params.id);
-      res.status(200).json({ message: "Gig destination zone retrieved successfully", data: destinationZone });
+      const gig = await GigService.getGigById(req.params.id);
+      if (!gig) {
+        return res.status(404).json({ message: "Gig not found", data: null });
+      }
+
+      const destinationZone = gig.destination_zone;
+      if (!destinationZone) {
+        return res.status(404).json({ message: "Destination zone not set", data: null });
+      }
+
+      const countryName = countries.getName(destinationZone, 'fr');
+      
+      res.status(200).json({ 
+        message: "Gig destination zone retrieved successfully", 
+        data: {
+          code: destinationZone,
+          name: countryName
+        }
+      });
     } catch (error) {
       console.error("Error in getGigDestinationZoneById:", error);
       res.status(500).json({ message: "Failed to retrieve gig destination zone", data: null });
