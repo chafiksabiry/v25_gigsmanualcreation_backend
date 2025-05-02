@@ -4,8 +4,9 @@ import mongoose from "mongoose";
 import { GigRepository } from "../repositories/gigRepository";
 import countries from 'i18n-iso-countries';
 
-// Initialiser les pays en français
+// Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
+countries.registerLocale(require('i18n-iso-countries/langs/en.json'));
 
 // Fonction pour obtenir le code alpha-2 à partir d'un nom de pays ou d'un code
 const getCountryCode = (input: string): string | null => {
@@ -14,8 +15,12 @@ const getCountryCode = (input: string): string | null => {
     return input.toUpperCase();
   }
   
-  // Essayer de trouver le code à partir du nom du pays
-  const code = countries.getAlpha2Code(input, 'fr');
+  // Essayer de trouver le code à partir du nom du pays en français
+  let code = countries.getAlpha2Code(input, 'fr');
+  if (!code) {
+    // Si pas trouvé en français, essayer en anglais
+    code = countries.getAlpha2Code(input, 'en');
+  }
   return code ? code.toUpperCase() : null;
 };
 
