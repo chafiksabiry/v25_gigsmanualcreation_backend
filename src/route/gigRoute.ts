@@ -12,4 +12,8 @@ router.get("/:id/destination-zone", GigController.getGigDestinationZoneById);
 router.put("/:id", GigController.updateGig);
 router.delete("/:id", GigController.deleteGig);
 
+// Get gigs by userId and companyId
+router.get("/user/:userId", GigController.getGigsByUserId);
+router.get("/company/:companyId", GigController.getGigsByCompanyId);
+
 export default router;

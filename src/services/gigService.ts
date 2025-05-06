@@ -136,4 +136,32 @@ export class GigService {
       throw new Error("Failed to delete gig");
     }
   }
+
+  static async getGigsByUserId(userId: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new Error("Invalid User ID format");
+      }
+
+      const gigs = await Gig.find({ userId });
+      return gigs;
+    } catch (error) {
+      console.error("Error in getGigsByUserId:", error);
+      throw new Error("Failed to retrieve gigs");
+    }
+  }
+
+  static async getGigsByCompanyId(companyId: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        throw new Error("Invalid Company ID format");
+      }
+
+      const gigs = await Gig.find({ companyId });
+      return gigs;
+    } catch (error) {
+      console.error("Error in getGigsByCompanyId:", error);
+      throw new Error("Failed to retrieve gigs");
+    }
+  }
 }

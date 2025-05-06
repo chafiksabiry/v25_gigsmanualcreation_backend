@@ -163,4 +163,34 @@ export class GigController {
       res.status(500).json({ message: "Failed to delete gig", data: null });
     }
   }
+
+  static async getGigsByUserId(req: Request, res: Response) {
+    try {
+      const userId = req.params.userId;
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: "Invalid User ID format", data: null });
+      }
+
+      const gigs = await GigService.getGigsByUserId(userId);
+      res.status(200).json({ message: "Gigs retrieved successfully", data: gigs });
+    } catch (error) {
+      console.error("Error in getGigsByUserId:", error);
+      res.status(500).json({ message: "Failed to retrieve gigs", data: null });
+    }
+  }
+
+  static async getGigsByCompanyId(req: Request, res: Response) {
+    try {
+      const companyId = req.params.companyId;
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        return res.status(400).json({ message: "Invalid Company ID format", data: null });
+      }
+
+      const gigs = await GigService.getGigsByCompanyId(companyId);
+      res.status(200).json({ message: "Gigs retrieved successfully", data: gigs });
+    } catch (error) {
+      console.error("Error in getGigsByCompanyId:", error);
+      res.status(500).json({ message: "Failed to retrieve gigs", data: null });
+    }
+  }
 }
