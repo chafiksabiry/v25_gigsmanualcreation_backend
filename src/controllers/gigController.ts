@@ -193,4 +193,24 @@ export class GigController {
       res.status(500).json({ message: "Failed to retrieve gigs", data: null });
     }
   }
+
+  static async hasCompanyGigs(req: Request, res: Response) {
+    try {
+      const companyId = req.params.companyId;
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        return res.status(400).json({ message: "Invalid Company ID format", data: null });
+      }
+
+      const gigs = await GigService.getGigsByCompanyId(companyId);
+      const hasGigs = gigs.length > 0;
+      
+      res.status(200).json({ 
+        message: "Company gig status retrieved successfully", 
+        data: { hasGigs } 
+      });
+    } catch (error) {
+      console.error("Error in hasCompanyGigs:", error);
+      res.status(500).json({ message: "Failed to check company gigs", data: null });
+    }
+  }
 }
