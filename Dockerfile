@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 
 ENV PORT=5003
-ENV MONGO_URI=mongodb://harx:gcZ62rl8hoME@185.137.122.3:27017/V25_CompanySearchWizard
+ENV MONGO_URI=mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard
 
 RUN npm install
 

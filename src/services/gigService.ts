@@ -164,4 +164,24 @@ export class GigService {
       throw new Error("Failed to retrieve gigs");
     }
   }
+
+  static async getCompanyByUserId(userId: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new Error("Invalid User ID format");
+      }
+
+      // Trouver d'abord un gig associé à cet utilisateur
+      const gig = await Gig.findOne({ userId });
+      if (!gig) {
+        return null;
+      }
+
+      // Si un gig est trouvé, retourner la company associée
+      return gig.companyId;
+    } catch (error) {
+      console.error("Error in getCompanyByUserId:", error);
+      throw new Error("Failed to retrieve company");
+    }
+  }
 }

@@ -213,4 +213,26 @@ export class GigController {
       res.status(500).json({ message: "Failed to check company gigs", data: null });
     }
   }
+
+  static async getCompanyByUserId(req: Request, res: Response) {
+    try {
+      const userId = req.params.userId;
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: "Invalid User ID format", data: null });
+      }
+
+      const company = await GigService.getCompanyByUserId(userId);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found for this user", data: null });
+      }
+
+      res.status(200).json({ 
+        message: "Company retrieved successfully", 
+        data: company 
+      });
+    } catch (error) {
+      console.error("Error in getCompanyByUserId:", error);
+      res.status(500).json({ message: "Failed to retrieve company", data: null });
+    }
+  }
 }
