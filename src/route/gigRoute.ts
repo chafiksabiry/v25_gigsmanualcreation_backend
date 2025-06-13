@@ -16,5 +16,6 @@ router.delete("/:id", GigController.deleteGig);
 router.get("/user/:userId", GigController.getGigsByUserId);
 router.get("/company/:companyId", GigController.getGigsByCompanyId);
 router.get("/company/:companyId/has-gigs", GigController.hasCompanyGigs);
+router.get("/company/:companyId/has-leads", GigController.hasCompanyLeads);
 
 export default router;

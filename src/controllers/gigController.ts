@@ -3,6 +3,7 @@ import { GigService } from "../services/gigService";
 import mongoose from "mongoose";
 import { GigRepository } from "../repositories/gigRepository";
 import countries from 'i18n-iso-countries';
+import { Lead } from "../models/leadModel";
 
 // Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
@@ -211,6 +212,26 @@ export class GigController {
     } catch (error) {
       console.error("Error in hasCompanyGigs:", error);
       res.status(500).json({ message: "Failed to check company gigs", data: null });
+    }
+  }
+
+  static async hasCompanyLeads(req: Request, res: Response) {
+    try {
+      const companyId = req.params.companyId;
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        return res.status(400).json({ message: "Invalid Company ID format", data: null });
+      }
+
+      const leads = await Lead.find({ companyId });
+      const hasLeads = leads.length > 0;
+      
+      res.status(200).json({ 
+        message: "Company leads status retrieved successfully", 
+        data: { hasLeads } 
+      });
+    } catch (error) {
+      console.error("Error in hasCompanyLeads:", error);
+      res.status(500).json({ message: "Failed to check company leads", data: null });
     }
   }
 
