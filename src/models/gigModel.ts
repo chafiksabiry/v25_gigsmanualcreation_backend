@@ -32,7 +32,6 @@ export interface IGig extends Document {
   };
   schedule: {
     days: string[];
-    hours: string;
     timeZones: string[];
     flexibility: string[];
     minimumHours: {
@@ -40,6 +39,8 @@ export interface IGig extends Document {
       weekly?: number;
       monthly?: number;
     };
+    starttime?: string;
+    endtime?: string;
   };
   commission: {
     base: string;
@@ -117,7 +118,6 @@ export const GigSchema = new Schema<IGig>(
     },
     schedule: {
       days: [{ type: String }],
-      hours: { type: String, required: false },
       timeZones: [{ type: String }],
       flexibility: [{ type: String }],
       minimumHours: {
@@ -125,6 +125,8 @@ export const GigSchema = new Schema<IGig>(
         weekly: Number,
         monthly: Number,
       },
+      starttime: { type: String, required: false },
+      endtime: { type: String, required: false },
     },
     commission: {
       base: { type: String, required: false },
