@@ -22,25 +22,42 @@ export interface IGig extends Document {
     yearsExperience: string;
   };
   skills: {
-    professional: string[];
-    technical: string[];
-    soft: string[];
+    professional: Array<{
+      skill: string;
+      level: number;
+      details: string;
+    }>;
+    technical: Array<{
+      skill: string;
+      level: number;
+      details: string;
+    }>;
+    soft: Array<{
+      skill: string;
+      level: number;
+      details: string;
+    }>;
     languages: Array<{
-      name: string;
-      level: string;
+      language: string;
+      proficiency: string;
+      iso639_1: string;
     }>;
   };
-  schedule: {
-    days: string[];
-    timeZones: string[];
+  availability: {
+    schedule: Array<{
+      day: string;
+      hours: {
+        start: string;
+        end: string;
+      };
+    }>;
+    timeZone: string;
     flexibility: string[];
     minimumHours: {
       daily?: number;
       weekly?: number;
       monthly?: number;
     };
-    starttime?: string;
-    endtime?: string;
   };
   commission: {
     base: string;
@@ -108,25 +125,42 @@ export const GigSchema = new Schema<IGig>(
       yearsExperience: { type: String, required: false },
     },
     skills: {
-      professional: [{ type: String }],
-      technical: [{ type: String }],
-      soft: [{ type: String }],
+      professional: [{
+        skill: { type: String, required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
+      technical: [{
+        skill: { type: String, required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
+      soft: [{
+        skill: { type: String, required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
       languages: [{
-        name: { type: String, required: true },
-        level: { type: String, required: true }
+        language: { type: String, required: false },
+        proficiency: { type: String, required: false },
+        iso639_1: { type: String, required: false }
       }]
     },
-    schedule: {
-      days: [{ type: String }],
-      timeZones: [{ type: String }],
+    availability: {
+      schedule: [{
+        day: { type: String, required: false },
+        hours: {
+          start: { type: String, required: false },
+          end: { type: String, required: false }
+        }
+      }],
+      timeZone: { type: String, required: false },
       flexibility: [{ type: String }],
       minimumHours: {
-        daily: Number,
-        weekly: Number,
-        monthly: Number,
-      },
-      starttime: { type: String, required: false },
-      endtime: { type: String, required: false },
+        daily: { type: Number, required: false },
+        weekly: { type: Number, required: false },
+        monthly: { type: Number, required: false }
+      }
     },
     commission: {
       base: { type: String, required: false },
