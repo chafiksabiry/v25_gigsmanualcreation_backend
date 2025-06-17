@@ -148,13 +148,13 @@ export const GigSchema = new Schema<IGig>(
     },
     availability: {
       schedule: [{
-        day: { type: String, required: true },
+        day: { type: String, required: false },
         hours: {
-          start: { type: String, required: true },
-          end: { type: String, required: true }
+          start: { type: String, required: false },
+          end: { type: String, required: false }
         }
       }],
-      timeZone: { type: String, required: true },
+      timeZone: { type: String, required: false },
       flexibility: [{ type: String }],
       minimumHours: {
         daily: { type: Number, required: false },
