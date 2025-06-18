@@ -15,6 +15,8 @@ const corsOptions = {
   origin: [
     'https://v25.harx.ai',
     'https://v25-preprod.harx.ai',
+    'https://gigsai.harx.ai',
+    'https://gigsai-preprod.harx.ai',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173'
