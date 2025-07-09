@@ -51,7 +51,7 @@ export interface IGig extends Document {
         end: string;
       };
     }>;
-    timeZone: mongoose.Types.ObjectId;
+    time_zone: mongoose.Types.ObjectId;
     flexibility: string[];
     minimumHours: {
       daily?: number;
@@ -154,7 +154,7 @@ export const GigSchema = new Schema<IGig>(
           end: { type: String, required: false }
         }
       }],
-      timeZone: { type: mongoose.Schema.Types.ObjectId, ref: 'TimeZone', required: false },
+      time_zone: { type: mongoose.Schema.Types.ObjectId, ref: 'TimeZone', required: false },
       flexibility: [{ type: String }],
       minimumHours: {
         daily: { type: Number, required: false },
