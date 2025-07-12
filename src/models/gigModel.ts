@@ -17,6 +17,7 @@ export interface IGig extends Document {
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   destination_zone: string;
+  logoUrl?: string; // URL du logo généré par DALL-E et uploadé sur Cloudinary
   seniority: {
     level: string;
     yearsExperience: string;
@@ -120,6 +121,7 @@ export const GigSchema = new Schema<IGig>(
         message: 'Le code pays doit être un code alpha-2 valide (ex: FR, US, DE)'
       }
     },
+    logoUrl: { type: String, required: false }, // URL du logo Cloudinary
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
