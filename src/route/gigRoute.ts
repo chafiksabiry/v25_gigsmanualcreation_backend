@@ -18,4 +18,7 @@ router.get("/company/:companyId", GigController.getGigsByCompanyId);
 router.get("/company/:companyId/has-gigs", GigController.hasCompanyGigs);
 router.get("/company/:companyId/has-leads", GigController.hasCompanyLeads);
 
+// Proxy route for DALL-E image upload to Cloudinary
+router.post("/proxy/upload-dalle-image", GigController.uploadDalleImageToCloudinary);
+
 export default router;
