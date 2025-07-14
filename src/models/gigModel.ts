@@ -23,17 +23,17 @@ export interface IGig extends Document {
   };
   skills: {
     professional: Array<{
-      skill: string;
+      skill: mongoose.Types.ObjectId;
       level: number;
       details: string;
     }>;
     technical: Array<{
-      skill: string;
+      skill: mongoose.Types.ObjectId;
       level: number;
       details: string;
     }>;
     soft: Array<{
-      skill: string;
+      skill: mongoose.Types.ObjectId;
       level: number;
       details: string;
     }>;
@@ -51,7 +51,7 @@ export interface IGig extends Document {
         end: string;
       };
     }>;
-    timeZone: string;
+    time_zone: mongoose.Types.ObjectId;
     flexibility: string[];
     minimumHours: {
       daily?: number;
@@ -126,17 +126,17 @@ export const GigSchema = new Schema<IGig>(
     },
     skills: {
       professional: [{
-        skill: { type: String, required: false },
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'ProfessionalSkill', required: false },
         level: { type: Number, required: false },
         details: { type: String, required: false }
       }],
       technical: [{
-        skill: { type: String, required: false },
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'TechnicalSkill', required: false },
         level: { type: Number, required: false },
         details: { type: String, required: false }
       }],
       soft: [{
-        skill: { type: String, required: false },
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'SoftSkill', required: false },
         level: { type: Number, required: false },
         details: { type: String, required: false }
       }],
@@ -154,7 +154,7 @@ export const GigSchema = new Schema<IGig>(
           end: { type: String, required: false }
         }
       }],
-      timeZone: { type: String, required: false },
+      time_zone: { type: mongoose.Schema.Types.ObjectId, ref: 'TimeZone', required: false },
       flexibility: [{ type: String }],
       minimumHours: {
         daily: { type: Number, required: false },

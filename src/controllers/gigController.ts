@@ -256,4 +256,76 @@ export class GigController {
       res.status(500).json({ message: "Failed to retrieve company", data: null });
     }
   }
+
+  static async uploadDalleImageToCloudinary(req: Request, res: Response) {
+    try {
+      const { dallEUrl, title } = req.body;
+
+      if (!dallEUrl) {
+        return res.status(400).json({ 
+          message: "DALL-E URL is required", 
+          data: null 
+        });
+      }
+
+      if (!title) {
+        return res.status(400).json({ 
+          message: "Title is required", 
+          data: null 
+        });
+      }
+
+      // Cloudinary configuration
+      const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'bf1katla';
+      const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'dyqg8x26j';
+
+      // Fetch the image from DALL-E URL (server-side, no CORS issues)
+      const imageResponse = await fetch(dallEUrl);
+      if (!imageResponse.ok) {
+        throw new Error(`Failed to fetch image from DALL-E: ${imageResponse.statusText}`);
+      }
+
+      const imageBuffer = await imageResponse.arrayBuffer();
+      
+      // Convert to base64 for Cloudinary upload
+      const base64Image = Buffer.from(imageBuffer).toString('base64');
+      const dataURI = `data:image/png;base64,${base64Image}`;
+
+      // Upload to Cloudinary using data URI
+      const formData = new FormData();
+      formData.append('file', dataURI);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+      const cloudinaryResponse = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!cloudinaryResponse.ok) {
+        const errorData = await cloudinaryResponse.json() as any;
+        throw new Error(errorData.error?.message || `Cloudinary error: ${cloudinaryResponse.statusText}`);
+      }
+
+      const result = await cloudinaryResponse.json() as any;
+      
+      if (result.secure_url) {
+        res.status(200).json({ 
+          message: "Image uploaded to Cloudinary successfully", 
+          data: { url: result.secure_url } 
+        });
+      } else {
+        throw new Error('No URL returned from Cloudinary');
+      }
+
+    } catch (error) {
+      console.error("Error in uploadDalleImageToCloudinary:", error);
+      res.status(500).json({ 
+        message: (error as Error).message || "Failed to upload image to Cloudinary", 
+        data: null 
+      });
+    }
+  }
 }
