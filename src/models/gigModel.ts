@@ -17,6 +17,8 @@ export interface IGig extends Document {
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   destination_zone: string;
+  activities: string[];
+  industries: string[];
   seniority: {
     level: string;
     yearsExperience: string;
@@ -120,6 +122,8 @@ export const GigSchema = new Schema<IGig>(
         message: 'Le code pays doit être un code alpha-2 valide (ex: FR, US, DE)'
       }
     },
+    activities: [{ type: String, required: false }],
+    industries: [{ type: String, required: false }],
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
