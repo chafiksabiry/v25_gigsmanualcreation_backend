@@ -15,6 +15,7 @@ router.delete("/:id", GigController.deleteGig);
 // Get gigs by userId and companyId
 router.get("/user/:userId", GigController.getGigsByUserId);
 router.get("/company/:companyId", GigController.getGigsByCompanyId);
+router.get("/company/:companyId/last", GigController.getLastGigByCompanyId);
 router.get("/company/:companyId/has-gigs", GigController.hasCompanyGigs);
 router.get("/company/:companyId/has-leads", GigController.hasCompanyLeads);
 
