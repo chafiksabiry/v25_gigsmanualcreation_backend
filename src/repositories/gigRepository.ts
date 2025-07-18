@@ -36,4 +36,10 @@ export class GigRepository {
   static async delete(id: string) {
     return await GigModel.findByIdAndDelete(id);
   }
+
+  static async getLastGigByCompanyId(companyId: string) {
+    return await GigModel.findOne({ companyId })
+      .sort({ createdAt: -1 })
+      .limit(1);
+  }
 }

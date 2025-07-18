@@ -184,4 +184,21 @@ export class GigService {
       throw new Error("Failed to retrieve company");
     }
   }
+
+  static async getLastGigByCompanyId(companyId: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        throw new Error("Invalid Company ID format");
+      }
+
+      const lastGig = await Gig.findOne({ companyId })
+        .sort({ createdAt: -1 })
+        .limit(1);
+
+      return lastGig;
+    } catch (error) {
+      console.error("Error in getLastGigByCompanyId:", error);
+      throw new Error("Failed to retrieve last gig for company");
+    }
+  }
 }

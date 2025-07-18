@@ -20,7 +20,9 @@ const corsOptions = {
     'http://localhost:5179',
     'http://localhost:3000',
     'http://localhost:3001',
-    'http://localhost:5173'
+    'http://localhost:5173',
+    'http://localhost:5179',
+    'http://localhost:5183'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

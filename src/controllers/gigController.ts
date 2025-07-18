@@ -257,6 +257,28 @@ export class GigController {
     }
   }
 
+  static async getLastGigByCompanyId(req: Request, res: Response) {
+    try {
+      const companyId = req.params.companyId;
+      if (!mongoose.Types.ObjectId.isValid(companyId)) {
+        return res.status(400).json({ message: "Invalid Company ID format", data: null });
+      }
+
+      const lastGig = await GigService.getLastGigByCompanyId(companyId);
+      if (!lastGig) {
+        return res.status(404).json({ message: "No gigs found for this company", data: null });
+      }
+
+      res.status(200).json({ 
+        message: "Last gig retrieved successfully", 
+        data: lastGig 
+      });
+    } catch (error) {
+      console.error("Error in getLastGigByCompanyId:", error);
+      res.status(500).json({ message: "Failed to retrieve last gig", data: null });
+    }
+  }
+
   static async uploadDalleImageToCloudinary(req: Request, res: Response) {
     try {
       const { dallEUrl, title } = req.body;
