@@ -103,7 +103,8 @@ export interface IGig extends Document {
     product?: { name: string; url: string }[];
     process?: { name: string; url: string }[];
     training?: { name: string; url: string }[];
-  };  
+  };
+  status: 'to_activate' | 'active' | 'inactive' | 'archived';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -227,6 +228,12 @@ export const GigSchema = new Schema<IGig>(
           url: { type: String, required: false },
         },
       ],
+    },
+    status: { 
+      type: String, 
+      enum: ['to_activate', 'active', 'inactive', 'archived'], 
+      default: 'to_activate',
+      required: true 
     },
   },
   { timestamps: true }
