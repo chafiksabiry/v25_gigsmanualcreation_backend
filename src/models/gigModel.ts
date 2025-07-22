@@ -17,8 +17,8 @@ export interface IGig extends Document {
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   destination_zone: string;
-  activities: string[];
-  industries: string[];
+  activities: mongoose.Types.ObjectId[];
+  industries: mongoose.Types.ObjectId[];
   seniority: {
     level: string;
     yearsExperience: string;
@@ -40,7 +40,7 @@ export interface IGig extends Document {
       details: string;
     }>;
     languages: Array<{
-      language: string;
+      language: mongoose.Types.ObjectId;
       proficiency: string;
       iso639_1: string;
     }>;
@@ -123,8 +123,8 @@ export const GigSchema = new Schema<IGig>(
         message: 'Le code pays doit être un code alpha-2 valide (ex: FR, US, DE)'
       }
     },
-    activities: [{ type: String, required: false }],
-    industries: [{ type: String, required: false }],
+    activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
+    industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
@@ -146,7 +146,7 @@ export const GigSchema = new Schema<IGig>(
         details: { type: String, required: false }
       }],
       languages: [{
-        language: { type: String, required: false },
+        language: { type: mongoose.Schema.Types.ObjectId, ref: 'Language', required: false },
         proficiency: { type: String, required: false },
         iso639_1: { type: String, required: false }
       }]
