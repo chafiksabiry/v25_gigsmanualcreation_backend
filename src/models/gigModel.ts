@@ -77,6 +77,7 @@ export interface IGig extends Document {
       type: string;
       amount: string;
     };
+    additionalDetails?: string;
   };
   leads: {
     types: Array<{
@@ -183,6 +184,7 @@ export const GigSchema = new Schema<IGig>(
         type: { type: String, required: false },
         amount: { type: String, required: false },
       },
+      additionalDetails: { type: String, required: false },
     },
     leads: {
       types: [
