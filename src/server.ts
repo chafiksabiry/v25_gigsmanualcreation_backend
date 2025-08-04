@@ -19,7 +19,8 @@ const corsOptions = {
     'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:5179',
-    'http://localhost:5183'
+    'http://localhost:5183',
+    'https://copilot.harx.ai'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
