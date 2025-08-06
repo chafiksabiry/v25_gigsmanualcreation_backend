@@ -72,6 +72,16 @@ export class GigController {
     }
   }
 
+  static async getActiveGigs(req: Request, res: Response) {
+    try {
+      const activeGigs = await GigService.getActiveGigs();
+      res.status(200).json({ message: "Active gigs retrieved successfully", data: activeGigs });
+    } catch (error) {
+      console.error("Error in getActiveGigs:", error);
+      res.status(500).json({ message: "Failed to retrieve active gigs", data: null });
+    }
+  }
+
   static async getGigById(req: Request, res: Response) {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {

@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.post("/", GigController.createGig);
 router.get("/", GigController.getAllGigs);
+router.get("/active", GigController.getActiveGigs);
 router.get("/:id", GigController.getGigById);
 
 // Gig Destination Zone
