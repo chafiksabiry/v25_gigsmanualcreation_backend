@@ -74,6 +74,32 @@ export class GigService {
     }
   }
 
+  static async getGigDetailsById(id: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error("Invalid Gig ID format");
+      }
+
+      const gig = await Gig.findById(id)
+        .populate('activities')
+        .populate('industries')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language')
+        .populate('availability.time_zone')
+        .populate('companyId');
+      
+      if (!gig) {
+        throw new Error("Gig not found");
+      }
+      return gig;
+    } catch (error) {
+      console.error("Error in getGigDetailsById:", error);
+      throw new Error("Failed to retrieve gig details");
+    }
+  }
+
   static async updateGig(id: string, updateData: any) {
     try {
       if (!mongoose.Types.ObjectId.isValid(id)) {
