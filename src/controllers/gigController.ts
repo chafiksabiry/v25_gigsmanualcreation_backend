@@ -99,6 +99,23 @@ export class GigController {
     }
   }
 
+  static async getGigDetailsById(req: Request, res: Response) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ message: "Invalid Gig ID format", data: null });
+      }
+
+      const gigDetails = await GigService.getGigDetailsById(req.params.id);
+      if (!gigDetails) {
+        return res.status(404).json({ message: "Gig not found", data: null });
+      }
+      res.status(200).json({ message: "Gig details retrieved successfully", data: gigDetails });
+    } catch (error) {
+      console.error("Error in getGigDetailsById:", error);
+      res.status(500).json({ message: "Failed to retrieve gig details", data: null });
+    }
+  }
+
   static async updateGig(req: Request, res: Response) {
     try {
       const id = req.params.id;
