@@ -34,15 +34,6 @@ export class GigService {
   static async getAllGigs() {
     try {
       return await Gig.find()
-        .populate('activities')
-        .populate('industries')
-        .populate('skills.professional.skill')
-        .populate('skills.technical.skill')
-        .populate('skills.soft.skill')
-        .populate('skills.languages.language')
-        .populate('availability.time_zone')
-        .populate('userId')
-        .populate('companyId');
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
