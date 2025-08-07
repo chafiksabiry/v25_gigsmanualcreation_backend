@@ -77,6 +77,7 @@ export interface IGig extends Document {
       type: string;
       amount: string;
     };
+    additionalDetails?: string;
   };
   leads: {
     types: Array<{
@@ -114,8 +115,8 @@ export const GigSchema = new Schema<IGig>(
     title: { type: String, required: false },
     description: { type: String, required: false },
     category: { type: String, required: false },
-    userId: { type: mongoose.Schema.Types.ObjectId, default: null },
-    companyId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
     destination_zone: { 
       type: String,
       validate: {
@@ -159,7 +160,7 @@ export const GigSchema = new Schema<IGig>(
           end: { type: String, required: false }
         }
       }],
-      time_zone: { type: mongoose.Schema.Types.ObjectId, ref: 'TimeZone', required: false },
+      time_zone: { type: mongoose.Schema.Types.ObjectId, ref: 'Timezone', required: false },
       flexibility: [{ type: String }],
       minimumHours: {
         daily: { type: Number, required: false },
@@ -183,6 +184,7 @@ export const GigSchema = new Schema<IGig>(
         type: { type: String, required: false },
         amount: { type: String, required: false },
       },
+      additionalDetails: { type: String, required: false },
     },
     leads: {
       types: [

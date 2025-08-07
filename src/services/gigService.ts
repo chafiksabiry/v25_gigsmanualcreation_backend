@@ -1,6 +1,14 @@
 import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
+// Import des modèles pour le populate
+import '../models/activityModel';
+import '../models/industryModel';
+import '../models/languageModel';
+import '../models/skillModels';
+import '../models/timezoneModel';
+import '../models/userModel';
+import '../models/companyModel';
 
 export class GigService {
   private gigRepository: GigRepository;
@@ -25,10 +33,27 @@ export class GigService {
 
   static async getAllGigs() {
     try {
-      return await Gig.find();
+      return await Gig.find()
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
+    }
+  }
+
+  static async getActiveGigs() {
+    try {
+      return await Gig.find({ status: 'active' })
+        .populate('activities')
+        .populate('industries')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language')
+        .populate('availability.time_zone')
+        .populate('companyId');
+    } catch (error) {
+      console.error("Error in getActiveGigs:", error);
+      throw new Error("Failed to retrieve active gigs");
     }
   }
 
@@ -46,6 +71,32 @@ export class GigService {
     } catch (error) {
       console.error("Error in getGigById:", error);
       throw new Error("Failed to retrieve gig");
+    }
+  }
+
+  static async getGigDetailsById(id: string) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error("Invalid Gig ID format");
+      }
+
+      const gig = await Gig.findById(id)
+        .populate('activities')
+        .populate('industries')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language')
+        .populate('availability.time_zone')
+        .populate('companyId');
+      
+      if (!gig) {
+        throw new Error("Gig not found");
+      }
+      return gig;
+    } catch (error) {
+      console.error("Error in getGigDetailsById:", error);
+      throw new Error("Failed to retrieve gig details");
     }
   }
 

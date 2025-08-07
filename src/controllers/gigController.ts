@@ -72,6 +72,16 @@ export class GigController {
     }
   }
 
+  static async getActiveGigs(req: Request, res: Response) {
+    try {
+      const activeGigs = await GigService.getActiveGigs();
+      res.status(200).json({ message: "Active gigs retrieved successfully", data: activeGigs });
+    } catch (error) {
+      console.error("Error in getActiveGigs:", error);
+      res.status(500).json({ message: "Failed to retrieve active gigs", data: null });
+    }
+  }
+
   static async getGigById(req: Request, res: Response) {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -86,6 +96,23 @@ export class GigController {
     } catch (error) {
       console.error("Error in getGigById:", error);
       res.status(500).json({ message: "Failed to retrieve gig", data: null });
+    }
+  }
+
+  static async getGigDetailsById(req: Request, res: Response) {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ message: "Invalid Gig ID format", data: null });
+      }
+
+      const gigDetails = await GigService.getGigDetailsById(req.params.id);
+      if (!gigDetails) {
+        return res.status(404).json({ message: "Gig not found", data: null });
+      }
+      res.status(200).json({ message: "Gig details retrieved successfully", data: gigDetails });
+    } catch (error) {
+      console.error("Error in getGigDetailsById:", error);
+      res.status(500).json({ message: "Failed to retrieve gig details", data: null });
     }
   }
 
