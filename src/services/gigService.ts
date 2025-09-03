@@ -157,7 +157,13 @@ export class GigService {
         throw new Error("Invalid Company ID format");
       }
 
-      const gigs = await Gig.find({ companyId });
+      const gigs = await Gig.find({ companyId })
+        .populate('activities')
+        .populate('industries')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       return gigs;
     } catch (error) {
       console.error("Error in getGigsByCompanyId:", error);
