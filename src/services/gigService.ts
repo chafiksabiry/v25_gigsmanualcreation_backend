@@ -33,7 +33,7 @@ export class GigService {
 
   static async getAllGigs() {
     try {
-      return await Gig.find()
+      return await Gig.find();
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
@@ -127,7 +127,7 @@ export class GigService {
     }
   }
 
-  async updateGig(id: string, updateData: any): Promise<any> {
+  async updateGigInstance(id: string, updateData: any): Promise<any> {
     try {
       const existingGig = await this.gigRepository.findById(id);
       if (!existingGig) {

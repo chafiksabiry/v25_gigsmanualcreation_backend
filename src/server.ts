@@ -2,8 +2,8 @@ import express, { Application } from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import bodyParser from 'body-parser';
+import cors from 'cors';
 import gigRoutes from './route/gigRoute';
-import cors from "cors";
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
