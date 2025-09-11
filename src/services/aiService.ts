@@ -392,7 +392,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
       }
 
       try {
-        const parsedResponse = JSON.parse(content);
+        const parsedResponse = this.parseOpenAIResponse(content);
         
         // Convertir les noms en IDs pour maintenir les références
         
@@ -581,7 +581,7 @@ Return JSON in this exact format:
       }
 
       try {
-        const parsedResponse = JSON.parse(content);
+        const parsedResponse = this.parseOpenAIResponse(content);
         
         // Convertir les langues en IDs
         if (parsedResponse.languages) {
@@ -679,7 +679,7 @@ Format your response as a JSON object with the following structure:
       }
 
       try {
-        return JSON.parse(content);
+        return this.parseOpenAIResponse(content);
       } catch (error) {
         console.error('Error parsing OpenAI response:', error);
         console.error('Raw response:', content);
@@ -727,7 +727,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
       }
 
       try {
-        return JSON.parse(content);
+        return this.parseOpenAIResponse(content);
       } catch (error) {
         console.error('Error parsing OpenAI response:', error);
         console.error('Raw response:', content);
@@ -902,6 +902,40 @@ Example response format: ["US", "CA", "UK", "DE"]`;
                timezonesList[0];
     
     return timezone ? timezone._id : timezoneName;
+  }
+
+  /**
+   * Parse robuste du JSON OpenAI qui peut contenir du texte explicatif
+   */
+  private static parseOpenAIResponse(content: string): any {
+    try {
+      // Essayer d'abord un parse direct
+      return JSON.parse(content);
+    } catch (error) {
+      console.log('Direct JSON parse failed, trying extraction...');
+      
+      // Extraire le JSON de la réponse (supprimer le texte explicatif)
+      let jsonContent = content;
+      
+      // Si la réponse contient des blocs de code markdown, les extraire
+      const codeBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (codeBlockMatch) {
+        jsonContent = codeBlockMatch[1];
+        console.log('Found JSON in markdown block');
+      } else {
+        // Chercher le début et la fin du JSON
+        const jsonStart = content.indexOf('{');
+        const jsonEnd = content.lastIndexOf('}') + 1;
+        
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          jsonContent = content.substring(jsonStart, jsonEnd);
+          console.log('Extracted JSON from position', jsonStart, 'to', jsonEnd);
+        }
+      }
+      
+      console.log('Attempting to parse extracted content:', jsonContent.substring(0, 200) + '...');
+      return JSON.parse(jsonContent);
+    }
   }
 
   /**
