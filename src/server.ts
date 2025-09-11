@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import gigRoutes from './route/gigRoute';
+import aiRoutes from './route/aiRoute';
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
@@ -43,6 +44,9 @@ mongoose.connect(process.env.MONGO_URI as string)
 
 // Utilisation des routes pour les gig
 app.use('/api/gigs', gigRoutes);
+
+// Utilisation des routes pour l'IA
+app.use('/api/ai', aiRoutes);
 
 // Route de base
 app.get('/', (req, res) => {
