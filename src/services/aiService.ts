@@ -11,6 +11,8 @@ export interface GigSuggestion {
   category: string;
   activities: string[];
   industries: string[];
+  highlights: string[];
+  deliverables: string[];
   schedule?: {
     schedules: Array<{
       timezone: string;
@@ -286,10 +288,16 @@ For jobTitles: Provide 2-4 different job title suggestions as an array, from mos
 
 For jobDescription: Provide a single enhanced description as a string (same language as user query)
 
+For highlights: Provide an array of 3-5 key selling points or attractive aspects of the role (same language as user query)
+
+For deliverables: Provide an array of 3-5 specific outcomes, results, or deliverables expected from this role (same language as user query)
+
 Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAME LANGUAGE as the user query - French→French, Arabic→Arabic, Spanish→Spanish, etc.):
 {
   "jobTitles": ["Main job title suggestion (SAME LANGUAGE AS USER QUERY)", "Alternative job title (SAME LANGUAGE AS USER QUERY)", "Another option (SAME LANGUAGE AS USER QUERY)"],
   "jobDescription": "Enhanced description (IN SAME LANGUAGE AS USER QUERY)",
+  "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
+  "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
   "destination_zone": "Europe/Paris",
   "activities": ["activity1", "activity2"],
