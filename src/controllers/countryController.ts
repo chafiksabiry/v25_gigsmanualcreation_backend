@@ -3,14 +3,10 @@ import { Country, ICountry } from '../models/countryModel';
 
 export class CountryController {
   /**
-   * Récupérer tous les pays
+   * Récupérer tous les pays (sans pagination)
    */
   static async getAllCountries(req: Request, res: Response) {
     try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 50;
-      const skip = (page - 1) * limit;
-
       // Filtres optionnels
       const search = req.query.search as string;
       let query = {};
@@ -26,21 +22,11 @@ export class CountryController {
       }
 
       const countries = await Country.find(query)
-        .skip(skip)
-        .limit(limit)
         .sort({ 'name.common': 1 });
-
-      const total = await Country.countDocuments(query);
 
       res.status(200).json({
         success: true,
-        data: countries,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        }
+        data: countries
       });
     } catch (error: any) {
       console.error('Error fetching countries:', error);

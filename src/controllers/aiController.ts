@@ -125,6 +125,7 @@ async function fetchTimezones(): Promise<Timezone[]> {
 async function fetchCountries(): Promise<any[]> {
   try {
     const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
+    console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
     const response = await fetch(countriesApiUrl);
     const data = await response.json() as ApiResponse<any[]>;
     

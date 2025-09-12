@@ -153,85 +153,166 @@ export class AIService {
   }
 
   /**
+   * Analyse intelligente de la description pour détecter les pays mentionnés
+   */
+  private static analyzeDescriptionForCountry(description: string): string {
+    const descriptionLower = description.toLowerCase();
+    
+    // Recherche de patterns spécifiques dans la description
+    const countryPatterns = [
+      // Patterns avec "time zone" ou "timezone"
+      { pattern: /time\s*zone?\s+(?:de|of|for)?\s*([a-z\s]+)/gi, group: 1 },
+      { pattern: /timezone?\s+(?:de|of|for)?\s*([a-z\s]+)/gi, group: 1 },
+      
+      // Patterns avec mentions directes de pays
+      { pattern: /(?:in|from|to|for|de|du|en|au)\s+([a-z\s]{3,20})/gi, group: 1 },
+      
+      // Patterns avec des phrases courantes
+      { pattern: /je veux le time zone de\s+([a-z\s]+)/gi, group: 1 },
+      { pattern: /i want the timezone of\s+([a-z\s]+)/gi, group: 1 },
+      { pattern: /based in\s+([a-z\s]+)/gi, group: 1 },
+      { pattern: /located in\s+([a-z\s]+)/gi, group: 1 },
+    ];
+
+    // Extraire tous les mots candidats
+    const candidates = new Set<string>();
+    
+    for (const { pattern, group } of countryPatterns) {
+      const matches = [...descriptionLower.matchAll(pattern)];
+      for (const match of matches) {
+        if (match[group]) {
+          const candidate = match[group].trim();
+          if (candidate.length >= 3 && candidate.length <= 20) {
+            candidates.add(candidate);
+          }
+        }
+      }
+    }
+
+    // Liste des pays connus avec leurs variantes
+    const knownCountries = [
+      { names: ['morocco', 'maroc'], canonical: 'Morocco' },
+      { names: ['turkey', 'turquie', 'türkiye'], canonical: 'Turkey' },
+      { names: ['egypt', 'égypte', 'egypte'], canonical: 'Egypt' },
+      { names: ['bangladesh', 'bengladish'], canonical: 'Bangladesh' },
+      { names: ['france', 'français'], canonical: 'France' },
+      { names: ['ethiopia', 'éthiopie'], canonical: 'Ethiopia' },
+      { names: ['usa', 'america', 'united states', 'états-unis'], canonical: 'United States' },
+      { names: ['spain', 'espagne'], canonical: 'Spain' },
+      { names: ['germany', 'allemagne'], canonical: 'Germany' },
+      { names: ['italy', 'italie'], canonical: 'Italy' },
+      { names: ['uk', 'united kingdom', 'royaume-uni'], canonical: 'United Kingdom' },
+      { names: ['china', 'chine'], canonical: 'China' },
+      { names: ['japan', 'japon'], canonical: 'Japan' },
+      { names: ['india', 'inde'], canonical: 'India' },
+      { names: ['canada'], canonical: 'Canada' },
+      { names: ['australia', 'australie'], canonical: 'Australia' },
+      { names: ['brazil', 'brésil'], canonical: 'Brazil' },
+      { names: ['russia', 'russie'], canonical: 'Russia' },
+      { names: ['algeria', 'algérie'], canonical: 'Algeria' },
+      { names: ['tunisia', 'tunisie'], canonical: 'Tunisia' },
+      { names: ['senegal', 'sénégal'], canonical: 'Senegal' },
+      { names: ['ivory coast', 'côte d\'ivoire'], canonical: 'Ivory Coast' },
+      { names: ['nigeria', 'nigéria'], canonical: 'Nigeria' },
+      { names: ['south africa', 'afrique du sud'], canonical: 'South Africa' },
+    ];
+
+    // Vérifier les candidats contre les pays connus
+    for (const candidate of candidates) {
+      for (const country of knownCountries) {
+        if (country.names.some(name => 
+          candidate.includes(name) || name.includes(candidate)
+        )) {
+          console.log(`🔍 DÉTECTION: "${candidate}" → ${country.canonical}`);
+          return country.canonical;
+        }
+      }
+    }
+
+    // Recherche directe dans le texte pour les pays courants
+    for (const country of knownCountries) {
+      for (const name of country.names) {
+        if (descriptionLower.includes(name)) {
+          console.log(`🔍 DÉTECTION DIRECTE: "${name}" → ${country.canonical}`);
+          return country.canonical;
+        }
+      }
+    }
+
+    console.log('🔍 AUCUN PAYS DÉTECTÉ dans la description');
+    return '';
+  }
+
+  /**
    * Trouve un ID de pays basé sur le nom du pays (similaire à findTimezoneId)
    */
   private static findCountryId(countryName: string, countriesData?: any[], fullContext?: string): string {
     if (!countriesData || countriesData.length === 0) {
-      return ''; // Pas de fallback par défaut pour les IDs
+      console.log('⚠️  Aucune donnée pays disponible');
+      return '';
     }
 
     const normalizedName = countryName.toLowerCase().trim();
+    console.log(`🔍 Recherche pays: "${normalizedName}" dans ${countriesData.length} pays`);
     
-    // Rechercher par nom commun d'abord
+    // 1. Recherche par nom commun exact
     let country = countriesData.find((c: any) => 
       c.name?.common?.toLowerCase() === normalizedName
     );
-
-    // Rechercher par nom officiel
-    if (!country) {
-      country = countriesData.find((c: any) => 
-        c.name?.official?.toLowerCase() === normalizedName
-      );
+    if (country) {
+      console.log(`✅ Trouvé par nom commun: ${country.name.common} (${country.cca2}) → ${country._id}`);
+      return country._id;
     }
 
-    // Rechercher par code CCA2
-    if (!country && countryName.length === 2) {
-      country = countriesData.find((c: any) => 
-        c.cca2?.toLowerCase() === normalizedName
-      );
+    // 2. Recherche par nom officiel exact
+    country = countriesData.find((c: any) => 
+      c.name?.official?.toLowerCase() === normalizedName
+    );
+    if (country) {
+      console.log(`✅ Trouvé par nom officiel: ${country.name.official} (${country.cca2}) → ${country._id}`);
+      return country._id;
     }
 
-    // Recherche par inclusion dans les noms
-    if (!country) {
-      country = countriesData.find((c: any) => 
-        c.name?.common?.toLowerCase().includes(normalizedName) ||
-        normalizedName.includes(c.name?.common?.toLowerCase()) ||
-        c.name?.official?.toLowerCase().includes(normalizedName) ||
-        normalizedName.includes(c.name?.official?.toLowerCase())
-      );
+    // 3. Recherche par inclusion dans nom commun
+    country = countriesData.find((c: any) => 
+      c.name?.common?.toLowerCase().includes(normalizedName) ||
+      normalizedName.includes(c.name?.common?.toLowerCase())
+    );
+    if (country) {
+      console.log(`✅ Trouvé par inclusion nom commun: ${country.name.common} (${country.cca2}) → ${country._id}`);
+      return country._id;
     }
 
-    // Rechercher dans les noms natifs
-    if (!country) {
-      country = countriesData.find((c: any) => {
-        if (c.name?.nativeName) {
-          for (const lang in c.name.nativeName) {
-            const nativeLang = c.name.nativeName[lang];
-            if (nativeLang?.common?.toLowerCase().includes(normalizedName) ||
-                nativeLang?.official?.toLowerCase().includes(normalizedName)) {
-              return true;
-            }
+    // 4. Recherche par inclusion dans nom officiel
+    country = countriesData.find((c: any) => 
+      c.name?.official?.toLowerCase().includes(normalizedName) ||
+      normalizedName.includes(c.name?.official?.toLowerCase())
+    );
+    if (country) {
+      console.log(`✅ Trouvé par inclusion nom officiel: ${country.name.official} (${country.cca2}) → ${country._id}`);
+      return country._id;
+    }
+
+    // 5. Recherche dans les noms natifs
+    country = countriesData.find((c: any) => {
+      if (c.name?.nativeName) {
+        for (const lang in c.name.nativeName) {
+          const nativeLang = c.name.nativeName[lang];
+          if (nativeLang?.common?.toLowerCase().includes(normalizedName) ||
+              nativeLang?.official?.toLowerCase().includes(normalizedName)) {
+            return true;
           }
         }
-        return false;
-      });
-    }
-
-    // Mappings spéciaux pour les noms couramment utilisés
-    if (!country) {
-      const nameMapping: { [key: string]: string } = {
-        'morocco': 'MA',
-        'maroc': 'MA',
-        'bangladesh': 'BD',
-        'bengladish': 'BD',
-        'egypt': 'EG',
-        'égypte': 'EG',
-        'egypte': 'EG',
-        'france': 'FR',
-        'ethiopia': 'ET',
-        'éthiopie': 'ET',
-        'usa': 'US',
-        'america': 'US',
-        'united states': 'US'
-      };
-      
-      const mappedCode = nameMapping[normalizedName];
-      if (mappedCode) {
-        country = countriesData.find((c: any) => c.cca2 === mappedCode);
       }
+      return false;
+    });
+    if (country) {
+      console.log(`✅ Trouvé par nom natif: ${country.name.common} (${country.cca2}) → ${country._id}`);
+      return country._id;
     }
 
-    return country?._id || '';
+    console.log(`❌ Pays "${normalizedName}" non trouvé dans l'API`);
+    return '';
   }
 
   /**
@@ -272,7 +353,10 @@ export class AIService {
       'china': 'CN',
       'chine': 'CN',
       'australia': 'AU',
-      'australie': 'AU'
+      'australie': 'AU',
+      'turkey': 'TR',
+      'turquie': 'TR',
+      'türkiye': 'TR'
     };
 
     // Vérifier les mappings directs d'abord
@@ -409,10 +493,6 @@ SECOND: DETECT THE TARGET COUNTRY for destination_zone by analyzing the descript
 - Look for timezone references: "time zone de Morocco" → MA, "timezone Morocco" → MA
 - Look for company indicators: French companies (APRIL, SPVIE, ALPTIS) usually → FR
 - Look for currency hints: "€" usually → FR, "$" → US, "MAD" → MA
-- CRITICAL: If you see "Morocco" or "Maroc" anywhere in the text → destination_zone MUST be "MA"
-- CRITICAL: If you see "Bangladesh" or "bengladish" anywhere in the text → destination_zone MUST be "BD"
-- CRITICAL: If you see "Egypt" or "Égypte" anywhere in the text → destination_zone MUST be "EG"
-- CRITICAL: If you see "Ethiopia" or "Éthiopie" anywhere in the text → destination_zone MUST be "ET"
 
 EXTREMELY IMPORTANT: The jobTitles array MUST be in the same language as the user query. 
 Example: Arabic query → Arabic jobTitles: ["وكيل مبيعات التأمين الصحي", "أخصائي التأمين الصحي"]
@@ -474,11 +554,12 @@ For timezone (availability.time_zone), follow this priority order:
    - US companies → America/New_York or America/Los_Angeles
 3. THIRD: If unclear, use Europe/Paris as default
 
-For destination_zone: Use a country name that will be converted to a MongoDB ID (like timezones):
-- CRITICAL: Look for explicit country mentions in the description (e.g., "Morocco" → "Morocco", "France" → "France", "United States" → "United States")
-- Check for company location indicators (French companies like APRIL, SPVIE → "France")
-- Check for timezone hints ("time zone de Morocco" → "Morocco")
-- Use country names that will be matched against the countries API data
+For destination_zone: Analyze the job description carefully to detect the target country:
+- CRITICAL: Look for explicit country mentions in phrases like "time zone de Turkey", "timezone of Morocco", "based in France"
+- Analyze context clues: company names, currencies, languages, cultural references
+- If no country is explicitly mentioned, infer from company indicators (French companies like APRIL, SPVIE → "France")
+- Use the exact country name that will be matched against the countries API
+- Examples: "Turkey" for Turkey, "Morocco" for Morocco, "France" for France
 
 For seniority.level: Choose from "Entry Level", "Junior", "Mid-Level", "Senior", "Team Lead", "Supervisor", "Manager", "Director"
 
@@ -625,40 +706,16 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         
         // Convertir les noms en IDs pour maintenir les références
         
-        // CORRECTION CRITIQUE: Forcer la détection du pays basée sur la description originale
-        const descriptionLower = description.toLowerCase();
+        // ANALYSE INTELLIGENTE: Détecter le pays mentionné dans la description
         const fullContext = `${description} ${JSON.stringify(parsedResponse)}`;
+        const detectedCountry = this.analyzeDescriptionForCountry(description);
         
-        // Détecter le pays mentionné dans la description et trouver son ID
-        let detectedCountry = '';
-        if (descriptionLower.includes('morocco') || descriptionLower.includes('maroc')) {
-          detectedCountry = 'morocco';
-        } else if (descriptionLower.includes('bangladesh') || descriptionLower.includes('bengladish')) {
-          detectedCountry = 'bangladesh';
-        } else if (descriptionLower.includes('egypt') || descriptionLower.includes('égypte') || descriptionLower.includes('egypte')) {
-          detectedCountry = 'egypt';
-        } else if (descriptionLower.includes('france') || descriptionLower.includes('français')) {
-          detectedCountry = 'france';
-        } else if (descriptionLower.includes('ethiopia') || descriptionLower.includes('éthiopie')) {
-          detectedCountry = 'ethiopia';
-        } else if (descriptionLower.includes('united states') || descriptionLower.includes('usa') || descriptionLower.includes('america')) {
-          detectedCountry = 'united states';
-        } else if (descriptionLower.includes('spain') || descriptionLower.includes('espagne')) {
-          detectedCountry = 'spain';
-        } else if (descriptionLower.includes('germany') || descriptionLower.includes('allemagne')) {
-          detectedCountry = 'germany';
-        } else if (descriptionLower.includes('italy') || descriptionLower.includes('italie')) {
-          detectedCountry = 'italy';
-        } else if (descriptionLower.includes('united kingdom') || descriptionLower.includes('uk') || descriptionLower.includes('royaume-uni')) {
-          detectedCountry = 'united kingdom';
-        }
-        
-        // Si un pays a été détecté, trouver son ID MongoDB
+        // Si un pays a été détecté dans la description, forcer la correction
         if (detectedCountry && countriesData) {
           const countryId = this.findCountryId(detectedCountry, countriesData, fullContext);
           if (countryId) {
             parsedResponse.destination_zone = countryId;
-            console.log(`🌍 CORRECTION: ${detectedCountry} détecté dans la description → destination_zone forcé à ${countryId}`);
+            console.log(`🌍 ANALYSE: "${detectedCountry}" détecté dans la description → destination_zone forcé à ${countryId}`);
           }
         }
         
