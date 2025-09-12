@@ -1,3 +1,4 @@
+import { ok } from 'node:assert';
 import OpenAI from 'openai';
 
 // Configuration sécurisée d'OpenAI côté backend
@@ -153,95 +154,44 @@ export class AIService {
   }
 
   /**
-   * Analyse intelligente de la description pour détecter les pays mentionnés
+   * Analyse simple de la description pour détecter les pays mentionnés
+   * Même logique que les timezones : recherche directe dans les données API
    */
-  private static analyzeDescriptionForCountry(description: string): string {
+  private static analyzeDescriptionForCountry(description: string, countriesData?: any[]): string {
+    if (!countriesData || countriesData.length === 0) {
+      console.log('⚠️ Aucune donnée pays disponible pour l\'analyse');
+      return '';
+    }
+
     const descriptionLower = description.toLowerCase();
-    
-    // Recherche de patterns spécifiques dans la description
-    const countryPatterns = [
-      // Patterns avec "time zone" ou "timezone"
-      { pattern: /time\s*zone?\s+(?:de|of|for)?\s*([a-z\s]+)/gi, group: 1 },
-      { pattern: /timezone?\s+(?:de|of|for)?\s*([a-z\s]+)/gi, group: 1 },
-      
-      // Patterns avec mentions directes de pays
-      { pattern: /(?:in|from|to|for|de|du|en|au)\s+([a-z\s]{3,20})/gi, group: 1 },
-      
-      // Patterns avec des phrases courantes
-      { pattern: /je veux le time zone de\s+([a-z\s]+)/gi, group: 1 },
-      { pattern: /i want the timezone of\s+([a-z\s]+)/gi, group: 1 },
-      { pattern: /based in\s+([a-z\s]+)/gi, group: 1 },
-      { pattern: /located in\s+([a-z\s]+)/gi, group: 1 },
-    ];
+    console.log(`🔍 RECHERCHE DIRECTE pays dans ${countriesData.length} pays de l'API`);
 
-    // Extraire tous les mots candidats
-    const candidates = new Set<string>();
-    
-    for (const { pattern, group } of countryPatterns) {
-      const matches = [...descriptionLower.matchAll(pattern)];
-      for (const match of matches) {
-        if (match[group]) {
-          const candidate = match[group].trim();
-          if (candidate.length >= 3 && candidate.length <= 20) {
-            candidates.add(candidate);
-          }
+    // Recherche directe dans le texte pour tous les pays de l'API (même logique que les timezones)
+    for (const country of countriesData) {
+      const namesToCheck = [
+        country.name?.common?.toLowerCase(),
+        country.name?.official?.toLowerCase(),
+        // Exclure les codes pays de 2 lettres pour éviter les faux positifs
+        // country.cca2?.toLowerCase(),
+        ...Object.values(country.name?.nativeName || {}).flatMap((native: any) => [
+          native?.common?.toLowerCase(),
+          native?.official?.toLowerCase()
+        ]).filter(Boolean)
+      ].filter(Boolean);
+
+      for (const name of namesToCheck) {
+        if (name && name.length >= 4 && descriptionLower.includes(name)) {
+          console.log(`🔍 PAYS TROUVÉ: "${name}" → ${country.name.common} (${country.cca2})`);
+          return country.name.common;
         }
       }
     }
 
-    // Liste des pays connus avec leurs variantes
-    const knownCountries = [
-      { names: ['morocco', 'maroc'], canonical: 'Morocco' },
-      { names: ['turkey', 'turquie', 'türkiye'], canonical: 'Turkey' },
-      { names: ['egypt', 'égypte', 'egypte'], canonical: 'Egypt' },
-      { names: ['bangladesh', 'bengladish'], canonical: 'Bangladesh' },
-      { names: ['france', 'français'], canonical: 'France' },
-      { names: ['ethiopia', 'éthiopie'], canonical: 'Ethiopia' },
-      { names: ['usa', 'america', 'united states', 'états-unis'], canonical: 'United States' },
-      { names: ['spain', 'espagne'], canonical: 'Spain' },
-      { names: ['germany', 'allemagne'], canonical: 'Germany' },
-      { names: ['italy', 'italie'], canonical: 'Italy' },
-      { names: ['uk', 'united kingdom', 'royaume-uni'], canonical: 'United Kingdom' },
-      { names: ['china', 'chine'], canonical: 'China' },
-      { names: ['japan', 'japon'], canonical: 'Japan' },
-      { names: ['india', 'inde'], canonical: 'India' },
-      { names: ['canada'], canonical: 'Canada' },
-      { names: ['australia', 'australie'], canonical: 'Australia' },
-      { names: ['brazil', 'brésil'], canonical: 'Brazil' },
-      { names: ['russia', 'russie'], canonical: 'Russia' },
-      { names: ['algeria', 'algérie'], canonical: 'Algeria' },
-      { names: ['tunisia', 'tunisie'], canonical: 'Tunisia' },
-      { names: ['senegal', 'sénégal'], canonical: 'Senegal' },
-      { names: ['ivory coast', 'côte d\'ivoire'], canonical: 'Ivory Coast' },
-      { names: ['nigeria', 'nigéria'], canonical: 'Nigeria' },
-      { names: ['south africa', 'afrique du sud'], canonical: 'South Africa' },
-    ];
-
-    // Vérifier les candidats contre les pays connus
-    for (const candidate of candidates) {
-      for (const country of knownCountries) {
-        if (country.names.some(name => 
-          candidate.includes(name) || name.includes(candidate)
-        )) {
-          console.log(`🔍 DÉTECTION: "${candidate}" → ${country.canonical}`);
-          return country.canonical;
-        }
-      }
-    }
-
-    // Recherche directe dans le texte pour les pays courants
-    for (const country of knownCountries) {
-      for (const name of country.names) {
-        if (descriptionLower.includes(name)) {
-          console.log(`🔍 DÉTECTION DIRECTE: "${name}" → ${country.canonical}`);
-          return country.canonical;
-        }
-      }
-    }
 
     console.log('🔍 AUCUN PAYS DÉTECTÉ dans la description');
     return '';
   }
+
 
   /**
    * Trouve un ID de pays basé sur le nom du pays (similaire à findTimezoneId)
@@ -554,12 +504,14 @@ For timezone (availability.time_zone), follow this priority order:
    - US companies → America/New_York or America/Los_Angeles
 3. THIRD: If unclear, use Europe/Paris as default
 
-For destination_zone: Analyze the job description carefully to detect the target country:
-- CRITICAL: Look for explicit country mentions in phrases like "time zone de Turkey", "timezone of Morocco", "based in France"
-- Analyze context clues: company names, currencies, languages, cultural references
-- If no country is explicitly mentioned, infer from company indicators (French companies like APRIL, SPVIE → "France")
-- Use the exact country name that will be matched against the countries API
-- Examples: "Turkey" for Turkey, "Morocco" for Morocco, "France" for France
+For destination_zone: CRITICAL - Detect the target country mentioned in the description:
+- PRIORITY 1: Look for EXPLICIT country mentions like "Destination zone Poland", "Destination zone Autriche", "timezone Turkey"
+- PRIORITY 2: Look for country names in ANY language: "Autriche" = Austria, "Turquie" = Turkey, "Norvège" = Norway, etc.
+- PRIORITY 3: Look for cultural references and nicknames: "pays des chocolat" = Switzerland, "land of rising sun" = Japan, "hexagone" = France
+- PRIORITY 4: Look for context clues: company locations, currencies, business indicators
+- PRIORITY 5: If no explicit country mentioned, infer from company indicators (APRIL/SPVIE = France)
+- ALWAYS prioritize explicit mentions and cultural references over general context clues
+- Return the ENGLISH country name that matches the countries API: "Switzerland", "Austria", "Turkey", "Norway", "Poland", etc.
 
 For seniority.level: Choose from "Entry Level", "Junior", "Mid-Level", "Senior", "Team Lead", "Supervisor", "Manager", "Director"
 
@@ -601,7 +553,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
   "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
   "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
-  "destination_zone": "France",
+  "destination_zone": "Switzerland",
   "activities": ["activity1", "activity2"],
   "industries": ["industry1", "industry2"],
   "seniority": {
@@ -708,16 +660,36 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         
         // ANALYSE INTELLIGENTE: Détecter le pays mentionné dans la description
         const fullContext = `${description} ${JSON.stringify(parsedResponse)}`;
-        const detectedCountry = this.analyzeDescriptionForCountry(description);
+        console.log(`🔍 ===== DÉBUT ANALYSE PAYS =====`);
+        console.log(`🔍 destination_zone original de l'AI = "${parsedResponse.destination_zone}"`);
+        console.log(`🔍 Description à analyser: "${description}"`);
+        console.log(`🔍 countriesData disponible: ${countriesData ? countriesData.length : 'NULL'} pays`);
         
-        // Si un pays a été détecté dans la description, forcer la correction
-        if (detectedCountry && countriesData) {
-          const countryId = this.findCountryId(detectedCountry, countriesData, fullContext);
-          if (countryId) {
-            parsedResponse.destination_zone = countryId;
-            console.log(`🌍 ANALYSE: "${detectedCountry}" détecté dans la description → destination_zone forcé à ${countryId}`);
+        if (countriesData && countriesData.length > 0) {
+          console.log(`🔍 Exemple pays dans countriesData: ${countriesData.slice(0, 3).map(c => c.name?.common).join(', ')}`);
+          
+          const detectedCountry = this.analyzeDescriptionForCountry(description, countriesData);
+          console.log(`🔍 Pays détecté par l'analyse: "${detectedCountry}"`);
+          
+          // Si un pays a été détecté dans la description, forcer la correction
+          if (detectedCountry) {
+            const countryId = this.findCountryId(detectedCountry, countriesData, fullContext);
+            console.log(`🔍 ID trouvé pour "${detectedCountry}": "${countryId}"`);
+            if (countryId) {
+              const originalDestination = parsedResponse.destination_zone;
+              parsedResponse.destination_zone = countryId;
+              console.log(`🌍 ✅ CORRECTION APPLIQUÉE: "${originalDestination}" → "${countryId}" (${detectedCountry})`);
+            } else {
+              console.log(`❌ ERREUR: Aucun ID trouvé pour "${detectedCountry}"`);
+            }
+          } else {
+            console.log(`⚠️ AUCUN PAYS DÉTECTÉ dans la description`);
           }
+        } else {
+          console.log(`❌ ERREUR CRITIQUE: countriesData vide ou null - impossible d'analyser`);
+          console.log(`⚠️ L'AI OpenAI doit détecter le pays correctement dans destination_zone`);
         }
+        console.log(`🔍 ===== FIN ANALYSE PAYS =====`);
         
         // Valider et corriger la catégorie
         if (parsedResponse.category) {
@@ -819,7 +791,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         if (parsedResponse.destination_zone && countriesData && !parsedResponse.availability?.time_zone) {
           const originalDestination = parsedResponse.destination_zone;
           const countryId = this.findCountryId(
-            parsedResponse.destination_zone,
+            parsedResponse.destination_zone, 
             countriesData,
             timezoneContext
           );
@@ -1204,7 +1176,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     if (timezone) return timezone._id;
     
     // Analyse contextuelle pour déterminer la région probable
-    const contextualMapping = this.getContextualTimezone(context || '', timezonesList);
+    const contextualMapping = this.getContextualTimezone(context || '', timezonesList, undefined);
     if (contextualMapping) return contextualMapping;
     
     // Recherche par nom de pays ou zone
@@ -1280,6 +1252,13 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    */
   private static getCurrencyFromTimezone(timezoneName: string): string {
     const currencyMapping: { [key: string]: string } = {
+      // Europe nordique
+      'Europe/Oslo': 'NOK',
+      'Europe/Stockholm': 'SEK',
+      'Europe/Copenhagen': 'DKK',
+      'Europe/Helsinki': 'EUR',
+      'Atlantic/Reykjavik': 'ISK',
+      
       // Europe
       'Europe/Paris': 'EUR',
       'Europe/London': 'GBP',
@@ -1327,86 +1306,84 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
   /**
    * Détermine la timezone appropriée basée sur le contexte du gig
+   * Utilise uniquement les données des APIs externes
    */
-  private static getContextualTimezone(context: string, timezonesList: any[]): string | null {
+  private static getContextualTimezone(context: string, timezonesList: any[], countriesData?: any[]): string | null {
+    if (!timezonesList || timezonesList.length === 0) {
+      console.log('⚠️ Aucune donnée timezone disponible pour l\'analyse contextuelle');
+      return null;
+    }
+
     const contextLower = context.toLowerCase();
-    
-    // PRIORITÉ 1: Demandes explicites de timezone/pays (plus prioritaire)
-    const explicitRequests = [
-      { patterns: ['ethiopia', 'ethiopian', 'addis ababa', 'time zone de ethiopia', 'timezone de ethiopia'], zone: 'Africa/Addis_Ababa' },
-      { patterns: ['morocco', 'maroc', 'casablanca', 'rabat'], zone: 'Africa/Casablanca' },
-      { patterns: ['tunisia', 'tunisie', 'tunis'], zone: 'Africa/Tunis' },
-      { patterns: ['algeria', 'algérie', 'algiers', 'alger'], zone: 'Africa/Algiers' },
-      { patterns: ['egypt', 'egypte', 'cairo', 'le caire'], zone: 'Africa/Cairo' },
-      { patterns: ['south africa', 'afrique du sud', 'johannesburg', 'cape town'], zone: 'Africa/Johannesburg' },
-      { patterns: ['kenya', 'nairobi'], zone: 'Africa/Nairobi' },
-      { patterns: ['nigeria', 'lagos'], zone: 'Africa/Lagos' },
-      { patterns: ['ghana', 'accra'], zone: 'Africa/Accra' },
-      { patterns: ['senegal', 'sénégal', 'dakar'], zone: 'Africa/Dakar' },
-      { patterns: ['ivory coast', 'côte d\'ivoire', 'abidjan'], zone: 'Africa/Abidjan' },
-      { patterns: ['india', 'inde', 'mumbai', 'delhi', 'bangalore', 'kolkata'], zone: 'Asia/Kolkata' },
-      { patterns: ['china', 'chine', 'beijing', 'shanghai'], zone: 'Asia/Shanghai' },
-      { patterns: ['japan', 'japon', 'tokyo'], zone: 'Asia/Tokyo' },
-      { patterns: ['australia', 'australie', 'sydney'], zone: 'Australia/Sydney' },
-      { patterns: ['brazil', 'brésil', 'sao paulo', 'rio'], zone: 'America/Sao_Paulo' },
-      { patterns: ['mexico', 'mexique', 'mexico city'], zone: 'America/Mexico_City' }
+    console.log(`🔍 ANALYSE TIMEZONE contextuelle dans ${timezonesList.length} timezones`);
+
+    // PRIORITÉ 1: Recherche directe dans les noms de zones et pays des timezones
+    for (const timezone of timezonesList) {
+      const searchTerms = [
+        timezone.zoneName?.toLowerCase(),
+        timezone.countryName?.toLowerCase(),
+        timezone.cityName?.toLowerCase(),
+        timezone.regionName?.toLowerCase()
+      ].filter(Boolean);
+
+      for (const term of searchTerms) {
+        if (contextLower.includes(term)) {
+          console.log(`🌐 TIMEZONE DIRECTE: "${term}" trouvé → ${timezone.zoneName} (${timezone._id})`);
+          return timezone._id;
+        }
+      }
+    }
+
+    // PRIORITÉ 2: Recherche par pays via l'API countries
+    if (countriesData && countriesData.length > 0) {
+      for (const country of countriesData) {
+        const countryTerms = [
+          country.name?.common?.toLowerCase(),
+          country.name?.official?.toLowerCase(),
+          country.cca2?.toLowerCase(),
+          ...Object.values(country.name?.nativeName || {}).flatMap((native: any) => [
+            native?.common?.toLowerCase(),
+            native?.official?.toLowerCase()
+          ]).filter(Boolean)
+        ].filter(Boolean);
+
+        for (const term of countryTerms) {
+          if (contextLower.includes(term)) {
+            // Chercher la timezone correspondant à ce pays
+            const matchingTimezone = timezonesList.find(tz => 
+              tz.countryName?.toLowerCase().includes(country.name?.common?.toLowerCase()) ||
+              tz.countryCode === country.cca2
+            );
+            
+            if (matchingTimezone) {
+              console.log(`🌐 TIMEZONE VIA PAYS: "${term}" → ${country.name.common} → ${matchingTimezone.zoneName} (${matchingTimezone._id})`);
+              return matchingTimezone._id;
+            }
+          }
+        }
+      }
+    }
+
+    // PRIORITÉ 3: Recherche par patterns de timezone communes
+    const timezonePatterns = [
+      { patterns: ['utc', 'gmt'], fallback: 'UTC' },
+      { patterns: ['est', 'eastern'], fallback: 'America/New_York' },
+      { patterns: ['pst', 'pacific'], fallback: 'America/Los_Angeles' },
+      { patterns: ['cet', 'central european'], fallback: 'Europe/Paris' },
+      { patterns: ['jst', 'japan'], fallback: 'Asia/Tokyo' }
     ];
 
-    // Vérifier les demandes explicites en premier
-    for (const request of explicitRequests) {
-      if (request.patterns.some(pattern => contextLower.includes(pattern))) {
-        const timezone = timezonesList.find(tz => tz.zoneName === request.zone);
-        if (timezone) return timezone._id;
+    for (const { patterns, fallback } of timezonePatterns) {
+      if (patterns.some(pattern => contextLower.includes(pattern))) {
+        const timezone = timezonesList.find(tz => tz.zoneName === fallback);
+        if (timezone) {
+          console.log(`🌐 TIMEZONE PATTERN: "${patterns[0]}" → ${fallback} (${timezone._id})`);
+          return timezone._id;
+        }
       }
     }
-    
-    // PRIORITÉ 2: Indicateurs de contexte métier (moins prioritaire)
-    // Indicateurs géographiques français
-    const frenchIndicators = [
-      'france', 'français', 'french', 'paris', 'lyon', 'marseille',
-      'april', 'spvie', 'alptis', 'harmonie mutuelle', 'maaf', 'macif',
-      'assurance santé', 'mutuelle', 'sécurité sociale', 'cpam'
-    ];
-    
-    // Indicateurs européens
-    const europeanIndicators = [
-      'europe', 'european', 'eu', 'cet', 'cest', 'berlin', 'amsterdam',
-      'brussels', 'madrid', 'rome', 'vienna'
-    ];
-    
-    // Indicateurs nord-américains
-    const northAmericanIndicators = [
-      'usa', 'united states', 'america', 'canada', 'new york', 'california',
-      'toronto', 'vancouver', 'est', 'pst', 'mst', 'cst'
-    ];
-    
-    // Indicateurs britanniques
-    const ukIndicators = [
-      'uk', 'united kingdom', 'britain', 'british', 'london', 'england',
-      'scotland', 'wales', 'gmt', 'bst'
-    ];
-    
-    let targetZone = null;
-    
-    if (frenchIndicators.some(indicator => contextLower.includes(indicator))) {
-      targetZone = 'Europe/Paris';
-    } else if (ukIndicators.some(indicator => contextLower.includes(indicator))) {
-      targetZone = 'Europe/London';
-    } else if (europeanIndicators.some(indicator => contextLower.includes(indicator))) {
-      targetZone = 'Europe/Paris'; // Par défaut Europe centrale
-    } else if (northAmericanIndicators.some(indicator => contextLower.includes(indicator))) {
-      if (contextLower.includes('california') || contextLower.includes('pst')) {
-        targetZone = 'America/Los_Angeles';
-      } else {
-        targetZone = 'America/New_York';
-      }
-    }
-    
-    if (targetZone) {
-      const timezone = timezonesList.find(tz => tz.zoneName === targetZone);
-      return timezone ? timezone._id : null;
-    }
-    
+
+    console.log('🔍 AUCUNE TIMEZONE CONTEXTUELLE détectée');
     return null;
   }
 }

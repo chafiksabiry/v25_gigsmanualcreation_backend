@@ -10,7 +10,7 @@ import countryRoutes from './route/countryRoute';
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
 const app: Application = express();
-const port = process.env.PORT || 5003;
+const port = process.env.PORT || 5005;
 
 // CORS configuration
 const corsOptions = {

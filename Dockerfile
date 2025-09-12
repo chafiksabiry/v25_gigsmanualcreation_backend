@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-ENV PORT=5003
+ENV PORT=5005
 ENV MONGO_URI=mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard
 
 ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j

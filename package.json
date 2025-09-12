@@ -15,7 +15,11 @@
     "test-ai": "npx ts-node src/scripts/testAIGeneration.ts",
     "test-morocco": "npx ts-node src/scripts/testMoroccoDetection.ts",
     "test-external-api": "npx ts-node src/scripts/testExternalCountriesAPI.ts",
-    "test-connection": "npx ts-node src/scripts/testCountriesConnection.ts"
+    "test-connection": "npx ts-node src/scripts/testCountriesConnection.ts",
+    "test-norway": "npx ts-node src/scripts/testNorwayDetection.ts",
+    "test-norway-timezone": "npx ts-node src/scripts/testNorwayTimezone.ts",
+    "test-turkey": "npx ts-node src/scripts/testTurkeyDetection.ts",
+    "test-simple-country": "npx ts-node src/scripts/testSimpleCountryDetection.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",
