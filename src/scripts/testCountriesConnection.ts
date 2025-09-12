@@ -16,7 +16,7 @@ async function testCountriesConnection() {
       });
       
       if (response.ok) {
-        const data = await response.json();
+        const data: any = await response.json();
         if (data.success && data.data) {
           console.log(`✅ Port ${port}: ${data.data.length} pays trouvés`);
           
@@ -51,7 +51,7 @@ async function testCountriesConnection() {
         signal: AbortSignal.timeout(5000)
       });
       if (response.ok) {
-        const data = await response.json();
+        const data: any = await response.json();
         console.log(`✅ URL env: ${data.success ? data.data.length + ' pays' : 'Erreur format'}`);
       } else {
         console.log(`❌ URL env: HTTP ${response.status}`);

@@ -9,6 +9,7 @@ export interface GigSuggestion {
   title: string;
   description: string;
   category: string;
+  destination_zone: string;
   activities: string[];
   industries: string[];
   highlights: string[];

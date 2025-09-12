@@ -14,7 +14,7 @@ async function testExternalCountriesAPI() {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
-    const data = await response.json();
+    const data: any = await response.json();
     
     if (data.success && data.data) {
       console.log(`✅ API externe accessible: ${data.data.length} pays récupérés`);
