@@ -7,7 +7,15 @@
     "dev": "nodemon --exec npx ts-node src/server.ts",
     "build": "tsc",
     "test": "jest",
-    "export": "npm run build && node scripts/prepare-export.js"
+    "export": "npm run build && node scripts/prepare-export.js",
+    "import-countries": "npx ts-node src/scripts/importCountries.ts",
+    "import-countries-js": "node src/scripts/importCountries.js",
+    "clean-countries": "npx ts-node src/scripts/cleanCountries.ts",
+    "test-countries": "npx ts-node src/scripts/testCountriesAPI.ts",
+    "test-ai": "npx ts-node src/scripts/testAIGeneration.ts",
+    "test-morocco": "npx ts-node src/scripts/testMoroccoDetection.ts",
+    "test-external-api": "npx ts-node src/scripts/testExternalCountriesAPI.ts",
+    "test-connection": "npx ts-node src/scripts/testCountriesConnection.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",

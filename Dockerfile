@@ -31,6 +31,7 @@ ENV SUPABASE_URL=https://himswpxnatldpsmndqlf.supabase.co
 ENV SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhpbXN3cHhuYXRsZHBzbW5kcWxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYyNDYyNjIsImV4cCI6MjA1MTgyMjI2Mn0.gBI2-Vbex1brojL2Izo-FPMOWzs8buzg64oM_8FzBr0
 ENV API_URL=https://api-gigsmanual.harx.ai/api
 ENV REP_URL=https://api-repcreationwizard.harx.ai/api
+ENV COUNTRIES_API_URL=https://api-gigsmanual.harx.ai/api/countries
 ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j
 ENV CLOUDINARY_API_KEY=981166483223979
 ENV CLOUDINARY_API_SECRET=i3nxRvfOF1jjfLzMHKE8mP4aXVM

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Country } from '../models/countryModel';
 import { AIService, TimezoneGenerationRequest } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 
@@ -120,6 +121,34 @@ async function fetchTimezones(): Promise<Timezone[]> {
   }
 }
 
+// Fonction pour récupérer les pays depuis l'API externe
+async function fetchCountries(): Promise<any[]> {
+  try {
+    const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
+    const response = await fetch(countriesApiUrl);
+    const data = await response.json() as ApiResponse<any[]>;
+    
+    if (data.success && data.data) {
+      console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
+      return data.data;
+    } else {
+      console.error('Erreur réponse API countries:', data);
+      return [];
+    }
+  } catch (error) {
+    console.error('Error fetching countries from API:', error);
+    // Fallback vers notre base de données locale en cas d'erreur
+    try {
+      const countries = await Country.find({}, { name: 1, cca2: 1, flags: 1 }).lean();
+      console.log(`⚠️  Fallback: ${countries.length} pays récupérés depuis MongoDB`);
+      return countries || [];
+    } catch (dbError) {
+      console.error('Error fallback database:', dbError);
+      return [];
+    }
+  }
+}
+
 export class AIController {
   /**
    * Génère des suggestions de gig complètes basées sur une description
@@ -134,13 +163,14 @@ export class AIController {
         });
       }
 
-      // Récupérer les données réelles depuis l'API externe
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData] = await Promise.all([
+      // Récupérer les données réelles depuis l'API externe et notre base de données
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
-        fetchTimezones()
+        fetchTimezones(),
+        fetchCountries()
       ]);
 
       const suggestions = await AIService.generateGigSuggestions(
@@ -149,7 +179,8 @@ export class AIController {
         industriesData,
         languagesData,
         skillsData,
-        timezonesData
+        timezonesData,
+        countriesData
       );
 
       res.status(200).json(suggestions);
@@ -265,13 +296,14 @@ export class AIController {
         });
       }
 
-      // Récupérer les données réelles depuis l'API externe
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData] = await Promise.all([
+      // Récupérer les données réelles depuis l'API externe et notre base de données
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
-        fetchTimezones()
+        fetchTimezones(),
+        fetchCountries()
       ]);
 
       // Utiliser la fonction generateGigSuggestions avec juste le titre comme description
@@ -281,7 +313,8 @@ export class AIController {
         industriesData,
         languagesData,
         skillsData,
-        timezonesData
+        timezonesData,
+        countriesData
       );
 
       res.status(200).json(suggestions);

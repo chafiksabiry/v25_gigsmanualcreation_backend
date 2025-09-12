@@ -152,6 +152,211 @@ export class AIService {
   }
 
   /**
+   * Trouve un ID de pays basé sur le nom du pays (similaire à findTimezoneId)
+   */
+  private static findCountryId(countryName: string, countriesData?: any[], fullContext?: string): string {
+    if (!countriesData || countriesData.length === 0) {
+      return ''; // Pas de fallback par défaut pour les IDs
+    }
+
+    const normalizedName = countryName.toLowerCase().trim();
+    
+    // Rechercher par nom commun d'abord
+    let country = countriesData.find((c: any) => 
+      c.name?.common?.toLowerCase() === normalizedName
+    );
+
+    // Rechercher par nom officiel
+    if (!country) {
+      country = countriesData.find((c: any) => 
+        c.name?.official?.toLowerCase() === normalizedName
+      );
+    }
+
+    // Rechercher par code CCA2
+    if (!country && countryName.length === 2) {
+      country = countriesData.find((c: any) => 
+        c.cca2?.toLowerCase() === normalizedName
+      );
+    }
+
+    // Recherche par inclusion dans les noms
+    if (!country) {
+      country = countriesData.find((c: any) => 
+        c.name?.common?.toLowerCase().includes(normalizedName) ||
+        normalizedName.includes(c.name?.common?.toLowerCase()) ||
+        c.name?.official?.toLowerCase().includes(normalizedName) ||
+        normalizedName.includes(c.name?.official?.toLowerCase())
+      );
+    }
+
+    // Rechercher dans les noms natifs
+    if (!country) {
+      country = countriesData.find((c: any) => {
+        if (c.name?.nativeName) {
+          for (const lang in c.name.nativeName) {
+            const nativeLang = c.name.nativeName[lang];
+            if (nativeLang?.common?.toLowerCase().includes(normalizedName) ||
+                nativeLang?.official?.toLowerCase().includes(normalizedName)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+    }
+
+    // Mappings spéciaux pour les noms couramment utilisés
+    if (!country) {
+      const nameMapping: { [key: string]: string } = {
+        'morocco': 'MA',
+        'maroc': 'MA',
+        'bangladesh': 'BD',
+        'bengladish': 'BD',
+        'egypt': 'EG',
+        'égypte': 'EG',
+        'egypte': 'EG',
+        'france': 'FR',
+        'ethiopia': 'ET',
+        'éthiopie': 'ET',
+        'usa': 'US',
+        'america': 'US',
+        'united states': 'US'
+      };
+      
+      const mappedCode = nameMapping[normalizedName];
+      if (mappedCode) {
+        country = countriesData.find((c: any) => c.cca2 === mappedCode);
+      }
+    }
+
+    return country?._id || '';
+  }
+
+  /**
+   * Trouve un code pays basé sur le nom du pays ou timezone (version legacy)
+   */
+  private static findCountryCode(countryName: string, countriesData?: any[]): string {
+    if (!countriesData || countriesData.length === 0) {
+      // Fallback par défaut si pas de données pays
+      return 'FR'; // France par défaut
+    }
+
+    const normalizedName = countryName.toLowerCase().trim();
+    
+    // Mappings directs pour les noms courants (priorité haute)
+    const directMappings: { [key: string]: string } = {
+      'morocco': 'MA',
+      'maroc': 'MA',
+      'bangladesh': 'BD',
+      'bengladish': 'BD',
+      'egypt': 'EG',
+      'égypte': 'EG',
+      'egypte': 'EG',
+      'france': 'FR',
+      'united states': 'US',
+      'usa': 'US',
+      'uk': 'GB',
+      'united kingdom': 'GB',
+      'spain': 'ES',
+      'espagne': 'ES',
+      'italy': 'IT',
+      'italie': 'IT',
+      'germany': 'DE',
+      'allemagne': 'DE',
+      'ethiopia': 'ET',
+      'éthiopie': 'ET',
+      'japan': 'JP',
+      'japon': 'JP',
+      'china': 'CN',
+      'chine': 'CN',
+      'australia': 'AU',
+      'australie': 'AU'
+    };
+
+    // Vérifier les mappings directs d'abord
+    if (directMappings[normalizedName]) {
+      return directMappings[normalizedName];
+    }
+
+    // Rechercher par code CCA2 si c'est déjà un code
+    if (countryName.length === 2) {
+      const country = countriesData.find((c: any) => 
+        c.cca2?.toLowerCase() === normalizedName
+      );
+      if (country) return country.cca2;
+    }
+
+    // Rechercher par nom commun (exact match d'abord)
+    let country = countriesData.find((c: any) => 
+      c.name?.common?.toLowerCase() === normalizedName
+    );
+
+    // Rechercher par nom officiel (exact match)
+    if (!country) {
+      country = countriesData.find((c: any) => 
+        c.name?.official?.toLowerCase() === normalizedName
+      );
+    }
+
+    // Rechercher par inclusion dans le nom commun
+    if (!country) {
+      country = countriesData.find((c: any) => 
+        c.name?.common?.toLowerCase().includes(normalizedName) ||
+        normalizedName.includes(c.name?.common?.toLowerCase())
+      );
+    }
+
+    // Rechercher par inclusion dans le nom officiel
+    if (!country) {
+      country = countriesData.find((c: any) => 
+        c.name?.official?.toLowerCase().includes(normalizedName) ||
+        normalizedName.includes(c.name?.official?.toLowerCase())
+      );
+    }
+
+    // Rechercher dans les noms natifs (pour l'API externe avec structure MongoDB)
+    if (!country) {
+      country = countriesData.find((c: any) => {
+        if (c.name?.nativeName) {
+          for (const lang in c.name.nativeName) {
+            const nativeLang = c.name.nativeName[lang];
+            if (nativeLang?.common?.toLowerCase().includes(normalizedName) ||
+                nativeLang?.official?.toLowerCase().includes(normalizedName)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+    }
+
+    // Mapping spécial pour les timezones communes
+    if (!country) {
+      const timezoneToCountry: { [key: string]: string } = {
+        'europe/paris': 'FR',
+        'europe/london': 'GB',
+        'america/new_york': 'US',
+        'america/los_angeles': 'US',
+        'africa/addis_ababa': 'ET',
+        'africa/casablanca': 'MA',
+        'africa/cairo': 'EG',
+        'asia/dhaka': 'BD',
+        'asia/tokyo': 'JP',
+        'asia/shanghai': 'CN',
+        'australia/sydney': 'AU'
+      };
+      
+      const mappedCode = timezoneToCountry[normalizedName];
+      if (mappedCode) {
+        country = countriesData.find((c: any) => c.cca2 === mappedCode);
+      }
+    }
+
+    return country?.cca2 || 'FR'; // Fallback vers France
+  }
+
+  /**
    * Génère des suggestions de gig basées sur une description
    */
   static async generateGigSuggestions(
@@ -160,7 +365,8 @@ export class AIService {
     industriesData: any[],
     languagesData: any[],
     skillsData: { soft: any[], professional: any[], technical: any[] },
-    timezonesData?: any[]
+    timezonesData?: any[],
+    countriesData?: any[]
   ): Promise<GigSuggestion> {
     if (!this.isValidApiKey()) {
       throw new Error('OpenAI API key not configured properly');
@@ -196,6 +402,16 @@ FIRST: DETECT THE LANGUAGE of the user's job description.
 - If it's in Japanese, respond in Japanese
 - If it's ANY OTHER language, respond in that exact same language
 This applies to ALL TEXT FIELDS: jobTitles, jobDescription, and additionalDetails.
+
+SECOND: DETECT THE TARGET COUNTRY for destination_zone by analyzing the description:
+- Look for explicit country mentions: "Morocco", "Maroc", "France", "United States", etc.
+- Look for timezone references: "time zone de Morocco" → MA, "timezone Morocco" → MA
+- Look for company indicators: French companies (APRIL, SPVIE, ALPTIS) usually → FR
+- Look for currency hints: "€" usually → FR, "$" → US, "MAD" → MA
+- CRITICAL: If you see "Morocco" or "Maroc" anywhere in the text → destination_zone MUST be "MA"
+- CRITICAL: If you see "Bangladesh" or "bengladish" anywhere in the text → destination_zone MUST be "BD"
+- CRITICAL: If you see "Egypt" or "Égypte" anywhere in the text → destination_zone MUST be "EG"
+- CRITICAL: If you see "Ethiopia" or "Éthiopie" anywhere in the text → destination_zone MUST be "ET"
 
 EXTREMELY IMPORTANT: The jobTitles array MUST be in the same language as the user query. 
 Example: Arabic query → Arabic jobTitles: ["وكيل مبيعات التأمين الصحي", "أخصائي التأمين الصحي"]
@@ -257,7 +473,11 @@ For timezone (availability.time_zone), follow this priority order:
    - US companies → America/New_York or America/Los_Angeles
 3. THIRD: If unclear, use Europe/Paris as default
 
-For destination_zone: Use the same timezone as availability.time_zone
+For destination_zone: Use a country name that will be converted to a MongoDB ID (like timezones):
+- CRITICAL: Look for explicit country mentions in the description (e.g., "Morocco" → "Morocco", "France" → "France", "United States" → "United States")
+- Check for company location indicators (French companies like APRIL, SPVIE → "France")
+- Check for timezone hints ("time zone de Morocco" → "Morocco")
+- Use country names that will be matched against the countries API data
 
 For seniority.level: Choose from "Entry Level", "Junior", "Mid-Level", "Senior", "Team Lead", "Supervisor", "Manager", "Director"
 
@@ -299,7 +519,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
   "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
   "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
-  "destination_zone": "Europe/Paris",
+  "destination_zone": "France",
   "activities": ["activity1", "activity2"],
   "industries": ["industry1", "industry2"],
   "seniority": {
@@ -404,6 +624,43 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         
         // Convertir les noms en IDs pour maintenir les références
         
+        // CORRECTION CRITIQUE: Forcer la détection du pays basée sur la description originale
+        const descriptionLower = description.toLowerCase();
+        const fullContext = `${description} ${JSON.stringify(parsedResponse)}`;
+        
+        // Détecter le pays mentionné dans la description et trouver son ID
+        let detectedCountry = '';
+        if (descriptionLower.includes('morocco') || descriptionLower.includes('maroc')) {
+          detectedCountry = 'morocco';
+        } else if (descriptionLower.includes('bangladesh') || descriptionLower.includes('bengladish')) {
+          detectedCountry = 'bangladesh';
+        } else if (descriptionLower.includes('egypt') || descriptionLower.includes('égypte') || descriptionLower.includes('egypte')) {
+          detectedCountry = 'egypt';
+        } else if (descriptionLower.includes('france') || descriptionLower.includes('français')) {
+          detectedCountry = 'france';
+        } else if (descriptionLower.includes('ethiopia') || descriptionLower.includes('éthiopie')) {
+          detectedCountry = 'ethiopia';
+        } else if (descriptionLower.includes('united states') || descriptionLower.includes('usa') || descriptionLower.includes('america')) {
+          detectedCountry = 'united states';
+        } else if (descriptionLower.includes('spain') || descriptionLower.includes('espagne')) {
+          detectedCountry = 'spain';
+        } else if (descriptionLower.includes('germany') || descriptionLower.includes('allemagne')) {
+          detectedCountry = 'germany';
+        } else if (descriptionLower.includes('italy') || descriptionLower.includes('italie')) {
+          detectedCountry = 'italy';
+        } else if (descriptionLower.includes('united kingdom') || descriptionLower.includes('uk') || descriptionLower.includes('royaume-uni')) {
+          detectedCountry = 'united kingdom';
+        }
+        
+        // Si un pays a été détecté, trouver son ID MongoDB
+        if (detectedCountry && countriesData) {
+          const countryId = this.findCountryId(detectedCountry, countriesData, fullContext);
+          if (countryId) {
+            parsedResponse.destination_zone = countryId;
+            console.log(`🌍 CORRECTION: ${detectedCountry} détecté dans la description → destination_zone forcé à ${countryId}`);
+          }
+        }
+        
         // Valider et corriger la catégorie
         if (parsedResponse.category) {
           parsedResponse.category = this.findBestCategory(parsedResponse.category);
@@ -460,13 +717,13 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         }
 
         // Convertir les timezones en IDs avec contexte intelligent
-        const fullContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
+        const timezoneContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
         
         // Gérer l'ancien format (schedule.schedules) pour rétrocompatibilité
         if (parsedResponse.schedule?.schedules && timezonesData) {
           parsedResponse.schedule.schedules = parsedResponse.schedule.schedules.map((schedule: any) => ({
             ...schedule,
-            timezone: this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, fullContext)
+            timezone: this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, timezoneContext)
           }));
         }
 
@@ -476,13 +733,22 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
           const timezoneId = this.findTimezoneId(
             originalTimezoneName, 
             timezonesData, 
-            fullContext
+            timezoneContext
           );
           parsedResponse.availability.time_zone = timezoneId;
           
-          // destination_zone utilise le même ID de timezone
-          if (parsedResponse.destination_zone) {
-            parsedResponse.destination_zone = timezoneId;
+          // destination_zone utilise les IDs MongoDB des pays (comme les timezones)
+          if (parsedResponse.destination_zone && countriesData) {
+            const originalDestination = parsedResponse.destination_zone;
+            const countryId = this.findCountryId(
+              parsedResponse.destination_zone,
+              countriesData,
+              timezoneContext
+            );
+            if (countryId) {
+              parsedResponse.destination_zone = countryId;
+              console.log(`🌍 Conversion destination_zone: "${originalDestination}" → ${countryId}`);
+            }
           }
           
           // Mettre à jour la currency basée sur la timezone
@@ -491,13 +757,18 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
           }
         }
 
-        // Si pas d'availability.time_zone mais destination_zone existe, la convertir aussi
-        if (parsedResponse.destination_zone && timezonesData && !parsedResponse.availability?.time_zone) {
-          parsedResponse.destination_zone = this.findTimezoneId(
-            parsedResponse.destination_zone, 
-            timezonesData, 
-            fullContext
+        // Si pas d'availability.time_zone mais destination_zone existe, traiter l'ID pays
+        if (parsedResponse.destination_zone && countriesData && !parsedResponse.availability?.time_zone) {
+          const originalDestination = parsedResponse.destination_zone;
+          const countryId = this.findCountryId(
+            parsedResponse.destination_zone,
+            countriesData,
+            timezoneContext
           );
+          if (countryId) {
+            parsedResponse.destination_zone = countryId;
+            console.log(`🌍 Conversion destination_zone (fallback): "${originalDestination}" → ${countryId}`);
+          }
         }
 
         // Convertir les territories en IDs
@@ -510,7 +781,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         // Convertir les timeZones dans le schedule principal (rétrocompatibilité)
         if (parsedResponse.schedule?.timeZones && timezonesData) {
           parsedResponse.schedule.timeZones = parsedResponse.schedule.timeZones.map((tz: string) => 
-            this.findTimezoneId(tz, timezonesData, fullContext)
+            this.findTimezoneId(tz, timezonesData, timezoneContext)
           );
         }
 

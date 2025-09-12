@@ -5,6 +5,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import gigRoutes from './route/gigRoute';
 import aiRoutes from './route/aiRoute';
+import countryRoutes from './route/countryRoute';
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
@@ -28,8 +29,9 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
-// Middleware pour parser le corps des requêtes en JSON
-app.use(bodyParser.json());
+// Middleware pour parser le corps des requêtes en JSON avec limite augmentée
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors(corsOptions));
 
 // Connexion à MongoDB
@@ -47,6 +49,9 @@ app.use('/api/gigs', gigRoutes);
 
 // Utilisation des routes pour l'IA
 app.use('/api/ai', aiRoutes);
+
+// Utilisation des routes pour les pays
+app.use('/api/countries', countryRoutes);
 
 // Route de base
 app.get('/', (req, res) => {
