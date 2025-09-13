@@ -531,7 +531,7 @@ For availability.flexibility: Choose from "Remote Work Available", "Flexible Hou
 
 For commission: Extract salary/commission info from description or use defaults
 
-For team.territories: List relevant countries/regions for the role (will be converted to timezone IDs)
+For team.territories: List relevant countries/regions for the role (will be converted to country IDs)
 
 For jobTitles: Provide 2-4 different job title suggestions as an array, from most specific to more general
 - CRITICAL: jobTitles MUST be in the SAME LANGUAGE as the user query
@@ -802,9 +802,9 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
         }
 
         // Convertir les territories en IDs
-        if (parsedResponse.team?.territories && timezonesData) {
+        if (parsedResponse.team?.territories && countriesData) {
           parsedResponse.team.territories = parsedResponse.team.territories.map((territory: string) => 
-            this.findTerritoryId(territory, timezonesData)
+            this.findTerritoryId(territory, countriesData)
           );
         }
 
@@ -1088,19 +1088,33 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'un territoire/pays par son nom
    */
-  private static findTerritoryId(territoryName: string, timezonesList: any[]): string {
-    if (!timezonesList || timezonesList.length === 0) return territoryName;
+  private static findTerritoryId(territoryName: string, countriesList: any[]): string {
+    if (!countriesList || countriesList.length === 0) return territoryName;
     
-    // Recherche par nom de pays exact
-    let territory = timezonesList.find(tz => 
-      tz.countryName?.toLowerCase() === territoryName.toLowerCase()
+    // Recherche par nom de pays exact (common)
+    let territory = countriesList.find(country => 
+      country.name?.common?.toLowerCase() === territoryName.toLowerCase()
     );
     
     if (territory) return territory._id;
     
-    // Recherche partielle par nom de pays
-    territory = timezonesList.find(tz => 
-      tz.countryName?.toLowerCase().includes(territoryName.toLowerCase())
+    // Recherche par nom officiel
+    territory = countriesList.find(country => 
+      country.name?.official?.toLowerCase() === territoryName.toLowerCase()
+    );
+    
+    if (territory) return territory._id;
+    
+    // Recherche partielle par nom de pays (common)
+    territory = countriesList.find(country => 
+      country.name?.common?.toLowerCase().includes(territoryName.toLowerCase())
+    );
+    
+    if (territory) return territory._id;
+    
+    // Recherche partielle par nom officiel
+    territory = countriesList.find(country => 
+      country.name?.official?.toLowerCase().includes(territoryName.toLowerCase())
     );
     
     if (territory) return territory._id;
@@ -1154,7 +1168,10 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     
     const mappedCountry = countryMapping[territoryName.toLowerCase()];
     if (mappedCountry) {
-      territory = timezonesList.find(tz => tz.countryName === mappedCountry);
+      territory = countriesList.find(country => 
+        country.name?.common?.toLowerCase() === mappedCountry.toLowerCase() ||
+        country.name?.official?.toLowerCase() === mappedCountry.toLowerCase()
+      );
       if (territory) return territory._id;
     }
     

@@ -453,7 +453,7 @@ export class AIController {
               }
             }
           ],
-          territories: [timezonesData.find((tz: Timezone) => tz.countryName === "France")?._id || "France"]
+          territories: [countriesData.find((country: any) => country.name?.common === "France")?._id || "France"]
         },
         // Informations de debug
         debug: {
