@@ -803,9 +803,14 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
 
         // Convertir les territories en IDs
         if (parsedResponse.team?.territories && countriesData) {
-          parsedResponse.team.territories = parsedResponse.team.territories.map((territory: string) => 
-            this.findTerritoryId(territory, countriesData)
-          );
+          console.log(`🏴 TERRITORIES AVANT conversion:`, parsedResponse.team.territories);
+          console.log(`🌍 COUNTRIES DATA disponible:`, countriesData.length, 'pays');
+          parsedResponse.team.territories = parsedResponse.team.territories.map((territory: string) => {
+            const result = this.findTerritoryId(territory, countriesData);
+            console.log(`🏴 TERRITORY: "${territory}" → ${result}`);
+            return result;
+          });
+          console.log(`🏴 TERRITORIES APRÈS conversion:`, parsedResponse.team.territories);
         }
 
         // Convertir les timeZones dans le schedule principal (rétrocompatibilité)
@@ -1089,7 +1094,11 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    * Trouve l'ID d'un territoire/pays par son nom
    */
   private static findTerritoryId(territoryName: string, countriesList: any[]): string {
-    if (!countriesList || countriesList.length === 0) return territoryName;
+    console.log(`🔍 RECHERCHE TERRITORY: "${territoryName}" dans ${countriesList?.length || 0} pays`);
+    if (!countriesList || countriesList.length === 0) {
+      console.log(`❌ COUNTRIES LIST vide ou undefined`);
+      return territoryName;
+    }
     
     // Recherche par nom de pays exact (common)
     let territory = countriesList.find(country => 
@@ -1176,6 +1185,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     }
     
     // Fallback: retourner le nom original si pas trouvé
+    console.log(`❌ TERRITORY "${territoryName}" non trouvé, retour du nom original`);
     return territoryName;
   }
 
