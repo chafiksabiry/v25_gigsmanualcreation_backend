@@ -342,12 +342,13 @@ export class AIController {
       }
 
       // Récupérer les vraies données depuis l'API externe
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData] = await Promise.all([
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
-        fetchTimezones()
+        fetchTimezones(),
+        fetchCountries()
       ]);
 
       // Déterminer la catégorie basée sur la description
