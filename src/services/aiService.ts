@@ -520,7 +520,7 @@ For commission: All amounts must be numbers (not strings), currency depends on d
 - bonus must ALWAYS be "Performance Bonus" (fixed value)
 - transactionCommission.type must ALWAYS be "Fixed Amount" (fixed value)
 - minimumVolume.period must be "Monthly", "Weekly", or "Daily"
-- minimumVolume.unit must be "Per Call" or "Per Transaction"
+- minimumVolume.unit must be "Calls" or "Sales"
 - additionalDetails: Provide detailed compensation information, performance bonuses, and payment conditions extracted from job description
 
 For team.structure.roleId: Choose from "Team Lead", "Senior Agent", "Agent", "Junior Agent", "Supervisor", "Manager", "Coordinator", "Specialist", "Consultant", "Representative", "Associate", "Assistant", "Trainee", "Intern"
@@ -607,7 +607,7 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
     "minimumVolume": {
       "amount": 25,
       "period": "Monthly",
-      "unit": "Per Call"
+      "unit": "Calls"
     },
     "transactionCommission": {
       "type": "Fixed Amount",

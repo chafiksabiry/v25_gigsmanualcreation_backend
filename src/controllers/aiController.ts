@@ -433,7 +433,7 @@ export class AIController {
           minimumVolume: {
             amount: 25,
             period: "Monthly",
-            unit: "Per Call"
+            unit: "Calls"
           },
           transactionCommission: {
             type: "Fixed Amount",
