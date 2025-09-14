@@ -1054,10 +1054,61 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    * Trouve l'ID d'une compétence par son nom
    */
   private static findSkillId(skillName: string, skillsList: any[]): string {
-    const skill = skillsList.find(s => 
+    // Exact match first
+    let skill = skillsList.find(s => 
       s.name.toLowerCase() === skillName.toLowerCase()
     );
-    return skill ? skill._id : skillName; // Fallback au nom si ID non trouvé
+    
+    if (skill) {
+      return skill._id;
+    }
+    
+    // Try partial match (skill name contains the search term or vice versa)
+    skill = skillsList.find(s => 
+      s.name.toLowerCase().includes(skillName.toLowerCase()) ||
+      skillName.toLowerCase().includes(s.name.toLowerCase())
+    );
+    
+    if (skill) {
+      console.log(`⚠️  Partial skill match found: "${skillName}" -> "${skill.name}" (${skill._id})`);
+      return skill._id;
+    }
+    
+    // Try fuzzy matching by removing common words and checking similarity
+    const normalizedSearchName = skillName.toLowerCase()
+      .replace(/\b(support|management|system|software|platform|tool|service|application|technology)\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (normalizedSearchName) {
+      skill = skillsList.find(s => {
+        const normalizedSkillName = s.name.toLowerCase()
+          .replace(/\b(support|management|system|software|platform|tool|service|application|technology)\b/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        return normalizedSkillName.includes(normalizedSearchName) ||
+               normalizedSearchName.includes(normalizedSkillName);
+      });
+      
+      if (skill) {
+        console.log(`⚠️  Fuzzy skill match found: "${skillName}" -> "${skill.name}" (${skill._id})`);
+        return skill._id;
+      }
+    }
+    
+    // Log when no match is found and return the first skill as fallback
+    console.error(`❌ No skill match found for: "${skillName}". Available skills: ${skillsList.map(s => s.name).join(', ')}`);
+    
+    // Return the first available skill as fallback instead of the name
+    if (skillsList.length > 0) {
+      console.log(`⚠️  Using fallback skill: "${skillsList[0].name}" (${skillsList[0]._id}) for "${skillName}"`);
+      return skillsList[0]._id;
+    }
+    
+    // This should never happen, but if no skills are available, return a default
+    console.error(`❌ No skills available in the list! Returning empty string for "${skillName}"`);
+    return '';
   }
 
   /**
