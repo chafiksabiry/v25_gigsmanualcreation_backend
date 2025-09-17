@@ -412,42 +412,21 @@ export class AIService {
       throw new Error('Description is required');
     }
 
-    // Créer les listes pour le prompt OpenAI
-    const activityNames = activitiesData.map(activity => activity.name);
-    const industryNames = industriesData.map(industry => industry.name);
-    const languageNames = languagesData.map(lang => lang.name);
-    const softSkillNames = skillsData.soft.map(skill => skill.name);
-    const professionalSkillNames = skillsData.professional.map(skill => skill.name);
-    const technicalSkillNames = skillsData.technical.map(skill => skill.name);
-    const currencyNames = currenciesData ? currenciesData.map(currency => `${currency.code} (${currency.name} - ${currency.symbol})`) : [];
+    // Créer les listes pour le prompt OpenAI (optimisées pour réduire les tokens)
+    const activityNames = activitiesData.slice(0, 20).map(activity => activity.name); // Limiter à 20
+    const industryNames = industriesData.slice(0, 15).map(industry => industry.name); // Limiter à 15
+    const languageNames = languagesData.slice(0, 15).map(lang => lang.name); // Limiter à 15
+    const softSkillNames = skillsData.soft.slice(0, 15).map(skill => skill.name); // Limiter à 15
+    const professionalSkillNames = skillsData.professional.slice(0, 15).map(skill => skill.name); // Limiter à 15
+    const technicalSkillNames = skillsData.technical.slice(0, 15).map(skill => skill.name); // Limiter à 15
+    const currencyNames = currenciesData ? currenciesData.slice(0, 20).map(currency => `${currency.code}`) : []; // Seulement les codes
 
-    const prompt = `Based on this gig description: "${description}"
+    const prompt = `Based on: "${description}"
 
-Please analyze and provide suggestions for a comprehensive gig listing. 
-
-FIRST: DETECT THE LANGUAGE of the user's job description. 
-- If it's in French, respond in French
-- If it's in English, respond in English  
-- If it's in Arabic, respond in Arabic
-- If it's in Spanish, respond in Spanish
-- If it's in German, respond in German
-- If it's in Italian, respond in Italian
-- If it's in Portuguese, respond in Portuguese
-- If it's in Dutch, respond in Dutch
-- If it's in Russian, respond in Russian
-- If it's in Chinese, respond in Chinese
-- If it's in Japanese, respond in Japanese
-- If it's ANY OTHER language, respond in that exact same language
-This applies to ALL TEXT FIELDS: jobTitles, jobDescription, and additionalDetails.
-
-SECOND: DETECT THE TARGET COUNTRY for destination_zone by analyzing the description:
-- Look for explicit country mentions: "Morocco", "Maroc", "France", "United States", etc.
-- Look for timezone references: "time zone de Morocco" → MA, "timezone Morocco" → MA
-- Look for company indicators: French companies (APRIL, SPVIE, ALPTIS) usually → FR
-- Look for currency hints: "€" usually → FR, "$" → US, "MAD" → MA
-
-EXTREMELY IMPORTANT: The jobTitles array MUST be in the same language as the user query. 
-Example: Arabic query → Arabic jobTitles: ["وكيل مبيعات التأمين الصحي", "أخصائي التأمين الصحي"]
+IMPORTANT: 
+- Respond in the SAME LANGUAGE as the input description
+- Detect target country from context (Egypt→EG, France→FR, Morocco→MA, etc.)
+- Use appropriate currency for the country
 
 Use ONLY the options provided below:
 
@@ -472,87 +451,17 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
-CURRENCIES (choose the most appropriate one for payment):
-${currencyNames.join(', ')}
+CURRENCIES: ${currencyNames.join(', ')}
 
-IMPORTANT INSTRUCTIONS:
+RULES:
+- Respond in same language as input
+- Detect country from context (مصر=Egypt, France=France, etc.)
+- For commission: base="Base + Commission", bonus="Performance Bonus", currency=country currency code
+- For schedule: Use specific days (Monday, Tuesday, etc.), no "Other days"
+- For seniority: Entry Level/Junior/Mid-Level/Senior/Manager
+- Extract salary/commission from description
 
-CRITICAL LANGUAGE ADAPTATION (MUST FOLLOW):
-- If user query contains French text → ALWAYS respond in French for title, description, additionalDetails
-- If user query contains English text → ALWAYS respond in English for title, description, additionalDetails  
-- If user query contains Arabic text → ALWAYS respond in Arabic for title, description, additionalDetails
-- If user query contains Spanish text → ALWAYS respond in Spanish for title, description, additionalDetails
-- If user query contains German text → ALWAYS respond in German for title, description, additionalDetails
-- If user query contains ANY OTHER language → ALWAYS respond in that exact same language for title, description, additionalDetails
-- DETECT the language from the job description content, not just keywords
-- Examples:
-  * French: "Rejoins notre équipe" → "Rejoignez notre équipe"
-  * English: "Join our team" → "Join our team"
-  * Arabic: "انضم إلى فريقنا" → "انضموا إلى فريقنا"
-  * Spanish: "Únete a nuestro equipo" → "Únase a nuestro equipo"
-
-- jobTitles Examples:
-  * Arabic query → jobTitles: ["وكيل مبيعات التأمين الصحي", "أخصائي مبيعات التأمين", "مستشار التأمين"]
-  * French query → jobTitles: ["Agent Commercial Assurance", "Spécialiste Vente", "Conseiller Assurance"]
-  * English query → jobTitles: ["Insurance Sales Agent", "Sales Specialist", "Insurance Advisor"]
-
-For availability.schedule:
-- NEVER use "Other days" - always specify individual days
-- Each day must be separate: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
-- Create individual schedule entries for each day mentioned
-
-For timezone (availability.time_zone), follow this priority order:
-1. FIRST: If user explicitly mentions a country/timezone (e.g., "Ethiopia", "time zone de ethiopia") → use that specific timezone (e.g., Africa/Addis_Ababa)
-2. SECOND: Analyze job context for company indicators:
-   - French companies (APRIL, SPVIE, ALPTIS, etc.) → Europe/Paris
-   - UK companies → Europe/London  
-   - US companies → America/New_York or America/Los_Angeles
-3. THIRD: If unclear, use Europe/Paris as default
-
-For destination_zone: CRITICAL - Detect the target country mentioned in the description:
-- PRIORITY 1: Look for EXPLICIT country mentions like "Destination zone Poland", "Destination zone Autriche", "timezone Turkey"
-- PRIORITY 2: Look for country names in ANY language: "Autriche" = Austria, "Turquie" = Turkey, "Norvège" = Norway, etc.
-- PRIORITY 3: Look for cultural references and nicknames: "pays des chocolat" = Switzerland, "land of rising sun" = Japan, "hexagone" = France
-- PRIORITY 4: Look for context clues: company locations, currencies, business indicators
-- PRIORITY 5: If no explicit country mentioned, infer from company indicators (APRIL/SPVIE = France)
-- ALWAYS prioritize explicit mentions and cultural references over general context clues
-- Return the ENGLISH country name that matches the countries API: "Switzerland", "Austria", "Turkey", "Norway", "Poland", etc.
-
-For seniority.level: Choose from "Entry Level", "Junior", "Mid-Level", "Senior", "Team Lead", "Supervisor", "Manager", "Director"
-
-For commission: All amounts must be numbers (not strings), currency should match the destination zone
-- base must ALWAYS be "Base + Commission" (fixed value)
-- bonus must ALWAYS be "Performance Bonus" (fixed value)
-- transactionCommission.type must ALWAYS be "Fixed Amount" (fixed value)
-- minimumVolume.period must be "Monthly", "Weekly", or "Daily"
-- minimumVolume.unit must be "Calls" or "Sales"
-- currency: Use the appropriate currency CODE (e.g., "EUR", "USD", "MAD") based on destination zone
-- additionalDetails: Provide detailed compensation information, performance bonuses, and payment conditions extracted from job description
-
-For team.structure.roleId: Choose from "Team Lead", "Senior Agent", "Agent", "Junior Agent", "Supervisor", "Manager", "Coordinator", "Specialist", "Consultant", "Representative", "Associate", "Assistant", "Trainee", "Intern"
-
-For availability.schedule: Create realistic work schedules based on job description
-
-For availability.flexibility: Choose from "Remote Work Available", "Flexible Hours", "Weekend Rotation", "Night Shift Available", "Split Shifts", "Part-Time Options", "Compressed Work Week", "Shift Swapping Allowed"
-
-For commission: Extract salary/commission info from description or use defaults
-
-For team.territories: List relevant countries/regions for the role (will be converted to country IDs)
-
-For jobTitles: Provide 2-4 different job title suggestions as an array, from most specific to more general
-- CRITICAL: jobTitles MUST be in the SAME LANGUAGE as the user query
-- If query is in Arabic → jobTitles in Arabic
-- If query is in French → jobTitles in French
-- If query is in English → jobTitles in English
-- If query is in any other language → jobTitles in that exact same language
-
-For jobDescription: Provide a single enhanced description as a string (same language as user query)
-
-For highlights: Provide an array of 3-5 key selling points or attractive aspects of the role (same language as user query)
-
-For deliverables: Provide an array of 3-5 specific outcomes, results, or deliverables expected from this role (same language as user query)
-
-Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAME LANGUAGE as the user query - French→French, Arabic→Arabic, Spanish→Spanish, etc.):
+JSON format:
 {
   "jobTitles": ["Main job title suggestion (SAME LANGUAGE AS USER QUERY)", "Alternative job title (SAME LANGUAGE AS USER QUERY)", "Another option (SAME LANGUAGE AS USER QUERY)"],
   "jobDescription": "Enhanced description (IN SAME LANGUAGE AS USER QUERY)",
