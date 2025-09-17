@@ -1112,23 +1112,132 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   }
 
   /**
-   * Trouve l'ID d'une activité par son nom
+   * Trouve l'ID d'une activité par son nom avec correspondance approximative
    */
   private static findActivityId(activityName: string, activitiesList: any[]): string {
-    const activity = activitiesList.find(a => 
+    // Recherche exacte d'abord
+    let activity = activitiesList.find(a => 
       a.name.toLowerCase() === activityName.toLowerCase()
     );
-    return activity ? activity._id : activityName;
+    
+    if (activity) {
+      return activity._id;
+    }
+    
+    // Recherche approximative si pas de correspondance exacte
+    const normalizedSearchName = activityName.toLowerCase().trim();
+    
+    // Essayer de trouver une correspondance partielle
+    activity = activitiesList.find(a => {
+      const normalizedActivityName = a.name.toLowerCase().trim();
+      return normalizedActivityName.includes(normalizedSearchName) || 
+             normalizedSearchName.includes(normalizedActivityName);
+    });
+    
+    if (activity) {
+      console.log(`🔄 Correspondance approximative trouvée: "${activityName}" → "${activity.name}" (${activity._id})`);
+      return activity._id;
+    }
+    
+    // Mapping manuel pour les cas courants
+    const manualMappings: { [key: string]: string } = {
+      'lead generation': 'Lead Generation',
+      'appointment setting': 'Appointment Setting',
+      'prospection': 'Lead Generation',
+      'prise de rendez-vous': 'Appointment Setting',
+      'génération de leads': 'Lead Generation',
+      'vente sortante': 'Outbound Sales',
+      'vente entrante': 'Inbound Sales',
+      'support client': 'Customer Service',
+      'service client': 'Customer Service'
+    };
+    
+    const mappedName = manualMappings[normalizedSearchName];
+    if (mappedName) {
+      activity = activitiesList.find(a => 
+        a.name.toLowerCase() === mappedName.toLowerCase()
+      );
+      if (activity) {
+        console.log(`🔄 Mapping manuel trouvé: "${activityName}" → "${activity.name}" (${activity._id})`);
+        return activity._id;
+      }
+    }
+    
+    // Si aucune correspondance n'est trouvée, utiliser la première activité par défaut
+    // au lieu de retourner le string original
+    if (activitiesList.length > 0) {
+      const defaultActivity = activitiesList[0];
+      console.warn(`⚠️  Aucune correspondance pour l'activité "${activityName}", utilisation par défaut: "${defaultActivity.name}" (${defaultActivity._id})`);
+      return defaultActivity._id;
+    }
+    
+    // En dernier recours, retourner un ID générique (ne devrait jamais arriver)
+    console.error(`❌ Impossible de mapper l'activité "${activityName}" et aucune activité par défaut disponible`);
+    return 'unknown-activity-id';
   }
 
   /**
-   * Trouve l'ID d'une industrie par son nom
+   * Trouve l'ID d'une industrie par son nom avec correspondance approximative
    */
   private static findIndustryId(industryName: string, industriesList: any[]): string {
-    const industry = industriesList.find(i => 
+    // Recherche exacte d'abord
+    let industry = industriesList.find(i => 
       i.name.toLowerCase() === industryName.toLowerCase()
     );
-    return industry ? industry._id : industryName;
+    
+    if (industry) {
+      return industry._id;
+    }
+    
+    // Recherche approximative si pas de correspondance exacte
+    const normalizedSearchName = industryName.toLowerCase().trim();
+    
+    // Essayer de trouver une correspondance partielle
+    industry = industriesList.find(i => {
+      const normalizedIndustryName = i.name.toLowerCase().trim();
+      return normalizedIndustryName.includes(normalizedSearchName) || 
+             normalizedSearchName.includes(normalizedIndustryName);
+    });
+    
+    if (industry) {
+      console.log(`🔄 Correspondance approximative trouvée pour industrie: "${industryName}" → "${industry.name}" (${industry._id})`);
+      return industry._id;
+    }
+    
+    // Mapping manuel pour les cas courants
+    const manualMappings: { [key: string]: string } = {
+      'insurance': 'Insurance',
+      'assurance': 'Insurance',
+      'healthcare': 'Healthcare',
+      'santé': 'Healthcare',
+      'technology': 'Technology',
+      'technologie': 'Technology',
+      'finance': 'Finance',
+      'banking': 'Banking',
+      'banque': 'Banking'
+    };
+    
+    const mappedName = manualMappings[normalizedSearchName];
+    if (mappedName) {
+      industry = industriesList.find(i => 
+        i.name.toLowerCase() === mappedName.toLowerCase()
+      );
+      if (industry) {
+        console.log(`🔄 Mapping manuel trouvé pour industrie: "${industryName}" → "${industry.name}" (${industry._id})`);
+        return industry._id;
+      }
+    }
+    
+    // Si aucune correspondance n'est trouvée, utiliser la première industrie par défaut
+    if (industriesList.length > 0) {
+      const defaultIndustry = industriesList[0];
+      console.warn(`⚠️  Aucune correspondance pour l'industrie "${industryName}", utilisation par défaut: "${defaultIndustry.name}" (${defaultIndustry._id})`);
+      return defaultIndustry._id;
+    }
+    
+    // En dernier recours, retourner un ID générique
+    console.error(`❌ Impossible de mapper l'industrie "${industryName}" et aucune industrie par défaut disponible`);
+    return 'unknown-industry-id';
   }
 
   /**

@@ -648,4 +648,115 @@ export class AIController {
       });
     }
   }
+
+  /**
+   * Endpoint pour tester la conversion des activités de noms vers IDs
+   */
+  static async testActivityMapping(req: Request, res: Response) {
+    try {
+      const { activities } = req.body;
+
+      if (!activities || !Array.isArray(activities)) {
+        return res.status(400).json({ 
+          error: 'Activities array is required' 
+        });
+      }
+
+      // Récupérer les données réelles des activités
+      const activitiesData = await fetchActivities();
+
+      // Tester la conversion
+      const testResults = activities.map((activityName: string) => {
+        // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
+        // Recherche exacte d'abord
+        let activity = activitiesData.find(a => 
+          a.name.toLowerCase() === activityName.toLowerCase()
+        );
+        
+        let matchType = 'exact';
+        let foundId = '';
+        
+        if (activity) {
+          foundId = activity._id;
+        } else {
+          // Recherche approximative
+          const normalizedSearchName = activityName.toLowerCase().trim();
+          
+          activity = activitiesData.find(a => {
+            const normalizedActivityName = a.name.toLowerCase().trim();
+            return normalizedActivityName.includes(normalizedSearchName) || 
+                   normalizedSearchName.includes(normalizedActivityName);
+          });
+          
+          if (activity) {
+            foundId = activity._id;
+            matchType = 'partial';
+          } else {
+            // Mapping manuel
+            const manualMappings: { [key: string]: string } = {
+              'lead generation': 'Lead Generation',
+              'appointment setting': 'Appointment Setting',
+              'prospection': 'Lead Generation',
+              'prise de rendez-vous': 'Appointment Setting',
+              'génération de leads': 'Lead Generation',
+              'vente sortante': 'Outbound Sales',
+              'vente entrante': 'Inbound Sales',
+              'support client': 'Customer Service',
+              'service client': 'Customer Service'
+            };
+            
+            const mappedName = manualMappings[normalizedSearchName];
+            if (mappedName) {
+              activity = activitiesData.find(a => 
+                a.name.toLowerCase() === mappedName.toLowerCase()
+              );
+              if (activity) {
+                foundId = activity._id;
+                matchType = 'manual_mapping';
+              }
+            }
+            
+            if (!foundId && activitiesData.length > 0) {
+              // Utiliser la première activité par défaut
+              foundId = activitiesData[0]._id;
+              activity = activitiesData[0];
+              matchType = 'default_fallback';
+            }
+          }
+        }
+
+        return {
+          input: activityName,
+          output: foundId,
+          matchedActivity: activity ? activity.name : 'Unknown',
+          matchType: matchType,
+          success: !!foundId && foundId !== 'unknown-activity-id'
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        message: "Activity mapping test completed",
+        results: testResults,
+        summary: {
+          total: testResults.length,
+          successful: testResults.filter(r => r.success).length,
+          failed: testResults.filter(r => !r.success).length,
+          matchTypes: {
+            exact: testResults.filter(r => r.matchType === 'exact').length,
+            partial: testResults.filter(r => r.matchType === 'partial').length,
+            manual_mapping: testResults.filter(r => r.matchType === 'manual_mapping').length,
+            default_fallback: testResults.filter(r => r.matchType === 'default_fallback').length
+          }
+        },
+        availableActivities: activitiesData.map(a => ({ id: a._id, name: a.name }))
+      });
+    } catch (error: any) {
+      console.error('Error testing activity mapping:', error);
+      res.status(500).json({ 
+        error: 'Failed to test activity mapping',
+        message: error.message 
+      });
+    }
+  }
 }

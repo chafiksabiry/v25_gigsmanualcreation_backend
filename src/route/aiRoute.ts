@@ -33,4 +33,7 @@ router.get('/categories', AIController.getCategories);
 // Route pour récupérer toutes les timezones
 router.get('/timezones', AIController.getTimezones);
 
+// Route pour tester le mapping des activités
+router.post('/test-activity-mapping', AIController.testActivityMapping);
+
 export default router;
