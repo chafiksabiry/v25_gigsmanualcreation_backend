@@ -420,14 +420,29 @@ export class AIService {
     const professionalSkillNames = skillsData.professional.slice(0, 15).map(skill => skill.name); // Limiter à 15
     const technicalSkillNames = skillsData.technical.slice(0, 15).map(skill => skill.name); // Limiter à 15
     const currencyNames = currenciesData ? currenciesData.slice(0, 20).map(currency => `${currency.code}`) : []; // Seulement les codes
-    const countryOptions = countriesData ? countriesData.slice(0, 50).map(country => `${country.name.common}: ${country._id}`).join(', ') : 'No countries available';
+    
+    // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
+    const priorityCountries = ['France', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
+    const sortedCountries = countriesData ? [...countriesData].sort((a, b) => {
+      const aIsPriority = priorityCountries.includes(a.name.common);
+      const bIsPriority = priorityCountries.includes(b.name.common);
+      if (aIsPriority && !bIsPriority) return -1;
+      if (!aIsPriority && bIsPriority) return 1;
+      return a.name.common.localeCompare(b.name.common);
+    }) : [];
+    
+    const countryOptions = sortedCountries.map(country => `${country.name.common}: ${country._id}`).join(', ');
 
     const prompt = `Based on: "${description}"
 
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as the input description
 - For destination_zone, use ONLY the MongoDB ObjectId from the COUNTRIES list below
-- Detect target country from context and use its corresponding ObjectId
+- Analyze the description carefully for country indicators:
+  * Language used (French text = France, English = US/UK)
+  * Currency mentioned (€/EUR = Europe)
+  * Context and terminology
+- Choose the most logical country based on context
 
 Use ONLY the options provided below:
 
@@ -459,7 +474,10 @@ CURRENCIES: ${currencyNames.join(', ')}
 
 RULES:
 - Respond in same language as input
-- Detect country from context (مصر=Egypt, France=France, etc.)
+- Country detection examples:
+  * French terminology → France
+  * "insurance", "healthcare" → US/UK based on other context
+  * Arabic text → Egypt/Morocco/Tunisia based on context
 - For commission: base="Base + Commission", bonus="Performance Bonus", currency=country currency code
 - For schedule: Use specific days (Monday, Tuesday, etc.), no "Other days"
 - For seniority: Entry Level/Junior/Mid-Level/Senior/Manager
