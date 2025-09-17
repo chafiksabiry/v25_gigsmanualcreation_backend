@@ -81,6 +81,47 @@ export class CurrencyController {
   }
 
   /**
+   * Récupérer une devise par son ID
+   */
+  static async getCurrencyById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      
+      // Vérifier si l'ID est un ObjectId valide
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid ID format',
+          message: `Invalid MongoDB ObjectId format: ${id}`
+        });
+      }
+      
+      const currency = await Currency.findById(id).lean();
+
+      if (!currency) {
+        return res.status(404).json({
+          success: false,
+          error: 'Currency not found',
+          message: `Currency with ID ${id} not found`
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: currency,
+        message: "Currency retrieved successfully"
+      });
+    } catch (error: any) {
+      console.error('Error getting currency by ID:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to get currency',
+        message: error.message 
+      });
+    }
+  }
+
+  /**
    * Récupérer une devise par son code
    */
   static async getCurrencyByCode(req: Request, res: Response) {

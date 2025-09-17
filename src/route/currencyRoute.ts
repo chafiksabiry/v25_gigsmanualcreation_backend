@@ -12,6 +12,9 @@ router.get('/stats', CurrencyController.getCurrencyStats);
 // Route pour importer/seeder les devises depuis currencies.json
 router.post('/seed', CurrencyController.seedCurrencies);
 
+// Route pour récupérer une devise par son ID
+router.get('/id/:id', CurrencyController.getCurrencyById);
+
 // Route pour récupérer une devise par son code
 router.get('/:code', CurrencyController.getCurrencyByCode);
 
