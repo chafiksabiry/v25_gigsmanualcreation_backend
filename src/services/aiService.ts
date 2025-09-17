@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 
 // Configuration sécurisée d'OpenAI côté backend
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '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',
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export interface GigSuggestion {
@@ -412,6 +412,14 @@ export class AIService {
       throw new Error('Description is required');
     }
 
+    // Valider que nous avons des données minimales
+    if (!countriesData || countriesData.length === 0) {
+      console.warn('⚠️ Aucune donnée pays disponible pour OpenAI');
+    }
+    if (!activitiesData || activitiesData.length === 0) {
+      console.warn('⚠️ Aucune donnée activités disponible pour OpenAI');
+    }
+
     // Créer les listes pour le prompt OpenAI (optimisées pour réduire les tokens)
     const activityNames = activitiesData.slice(0, 20).map(activity => activity.name); // Limiter à 20
     const industryNames = industriesData.slice(0, 15).map(industry => industry.name); // Limiter à 15
@@ -431,7 +439,11 @@ export class AIService {
       return a.name.common.localeCompare(b.name.common);
     }) : [];
     
-    const countryOptions = sortedCountries.map(country => `${country.name.common}: ${country._id}`).join(', ');
+    // Limiter à 200 pays maximum pour éviter un prompt trop long
+    const countryOptions = sortedCountries.slice(0, 200).map(country => `${country.name.common}: ${country._id}`).join(', ');
+    
+    console.log(`🔍 Prompt préparé avec ${sortedCountries.length} pays (limité à 200), ${activityNames.length} activités`);
+    console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => c.name.common).join(', ')}`);
 
     const prompt = `Based on: "${description}"
 
@@ -569,6 +581,8 @@ JSON format:
 }`;
 
     return retryWithBackoff(async () => {
+      console.log('🤖 Appel OpenAI en cours...');
+      
       const completion = await openai.chat.completions.create({
         model: 'gpt-4',
         messages: [
@@ -585,6 +599,7 @@ JSON format:
         max_tokens: 2000
       });
 
+      console.log('✅ Réponse OpenAI reçue');
       const content = completion.choices[0].message.content;
       if (!content) {
         throw new Error('No content received from OpenAI');
