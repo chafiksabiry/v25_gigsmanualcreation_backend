@@ -401,7 +401,8 @@ export class AIService {
     languagesData: any[],
     skillsData: { soft: any[], professional: any[], technical: any[] },
     timezonesData?: any[],
-    countriesData?: any[]
+    countriesData?: any[],
+    currenciesData?: any[]
   ): Promise<GigSuggestion> {
     if (!this.isValidApiKey()) {
       throw new Error('OpenAI API key not configured properly');
@@ -418,6 +419,7 @@ export class AIService {
     const softSkillNames = skillsData.soft.map(skill => skill.name);
     const professionalSkillNames = skillsData.professional.map(skill => skill.name);
     const technicalSkillNames = skillsData.technical.map(skill => skill.name);
+    const currencyNames = currenciesData ? currenciesData.map(currency => `${currency.code} (${currency.name} - ${currency.symbol})`) : [];
 
     const prompt = `Based on this gig description: "${description}"
 
@@ -470,6 +472,9 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
+CURRENCIES (choose the most appropriate one for payment):
+${currencyNames.join(', ')}
+
 IMPORTANT INSTRUCTIONS:
 
 CRITICAL LANGUAGE ADAPTATION (MUST FOLLOW):
@@ -515,12 +520,13 @@ For destination_zone: CRITICAL - Detect the target country mentioned in the desc
 
 For seniority.level: Choose from "Entry Level", "Junior", "Mid-Level", "Senior", "Team Lead", "Supervisor", "Manager", "Director"
 
-For commission: All amounts must be numbers (not strings), currency depends on destination_zone
+For commission: All amounts must be numbers (not strings), currency should match the destination zone
 - base must ALWAYS be "Base + Commission" (fixed value)
 - bonus must ALWAYS be "Performance Bonus" (fixed value)
 - transactionCommission.type must ALWAYS be "Fixed Amount" (fixed value)
 - minimumVolume.period must be "Monthly", "Weekly", or "Daily"
 - minimumVolume.unit must be "Calls" or "Sales"
+- currency: Use the appropriate currency CODE (e.g., "EUR", "USD", "MAD") based on destination zone
 - additionalDetails: Provide detailed compensation information, performance bonuses, and payment conditions extracted from job description
 
 For team.structure.roleId: Choose from "Team Lead", "Senior Agent", "Agent", "Junior Agent", "Supervisor", "Manager", "Coordinator", "Specialist", "Consultant", "Representative", "Associate", "Assistant", "Trainee", "Intern"
@@ -746,6 +752,14 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
           }
         }
 
+        // Convertir la devise en ID si l'IA en a suggéré une
+        if (parsedResponse.commission?.currency && currenciesData && currenciesData.length > 0) {
+          const originalCurrency = parsedResponse.commission.currency;
+          const currencyId = this.findCurrencyId(originalCurrency, currenciesData);
+          parsedResponse.commission.currency = currencyId;
+          console.log(`💰 Conversion devise: "${originalCurrency}" → ${currencyId}`);
+        }
+
         // Convertir les timezones en IDs avec contexte intelligent
         const timezoneContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
         
@@ -783,7 +797,12 @@ Provide a response in this exact JSON format (CRITICAL: ALWAYS use the EXACT SAM
           
           // Mettre à jour la currency basée sur la timezone
           if (parsedResponse.commission) {
-            parsedResponse.commission.currency = this.getCurrencyFromTimezone(originalTimezoneName);
+            const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
+            if (currenciesData && currenciesData.length > 0) {
+              parsedResponse.commission.currency = this.findCurrencyId(currencyCode, currenciesData);
+            } else {
+              parsedResponse.commission.currency = currencyCode;
+            }
           }
         }
 
@@ -1238,6 +1257,37 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     // En dernier recours, retourner un ID générique
     console.error(`❌ Impossible de mapper l'industrie "${industryName}" et aucune industrie par défaut disponible`);
     return 'unknown-industry-id';
+  }
+
+  /**
+   * Trouve l'ID d'une devise par son code
+   */
+  private static findCurrencyId(currencyCode: string, currenciesList: any[]): string {
+    if (!currenciesList || currenciesList.length === 0) {
+      console.warn(`⚠️  Aucune devise disponible pour "${currencyCode}"`);
+      return currencyCode; // Retourner le code tel quel si pas de données
+    }
+
+    // Recherche exacte par code
+    const currency = currenciesList.find(c => 
+      c.code && c.code.toUpperCase() === currencyCode.toUpperCase()
+    );
+    
+    if (currency) {
+      console.log(`✅ Devise trouvée: ${currencyCode} → ${currency.name} (${currency._id})`);
+      return currency._id;
+    }
+    
+    // Si pas trouvé, utiliser USD par défaut ou la première devise disponible
+    const defaultCurrency = currenciesList.find(c => c.code === 'USD') || currenciesList[0];
+    if (defaultCurrency) {
+      console.warn(`⚠️  Devise "${currencyCode}" non trouvée, utilisation par défaut: ${defaultCurrency.code} (${defaultCurrency._id})`);
+      return defaultCurrency._id;
+    }
+    
+    // En dernier recours
+    console.error(`❌ Impossible de mapper la devise "${currencyCode}"`);
+    return currencyCode;
   }
 
   /**

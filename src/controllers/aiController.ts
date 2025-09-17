@@ -5,6 +5,7 @@ import { PopulateService } from '../services/populateService';
 
 // Configuration de l'API externe
 const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
+const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://api-gigsmanual.harx.ai/api/currencies';
 
 // Types pour les réponses de l'API externe
 interface ApiResponse<T> {
@@ -41,6 +42,16 @@ interface Skill {
   description: string;
   category: string;
   isActive: boolean;
+}
+
+interface Currency {
+  _id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Fonctions pour récupérer les données depuis l'API externe
@@ -99,6 +110,25 @@ async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; te
   } catch (error) {
     console.error('Error fetching skills:', error);
     return { soft: [], professional: [], technical: [] };
+  }
+}
+
+async function fetchCurrencies(): Promise<Currency[]> {
+  try {
+    console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
+    const response = await fetch(CURRENCIES_API_URL);
+    const data = await response.json() as ApiResponse<Currency[]>;
+    
+    if (data.success && data.data) {
+      console.log(`✅ ${data.data.length} currencies fetched successfully`);
+      return data.data.filter(currency => currency.isActive);
+    } else {
+      console.error('Error in currencies API response:', data);
+      return [];
+    }
+  } catch (error) {
+    console.error('Error fetching currencies:', error);
+    return [];
   }
 }
 
@@ -165,13 +195,14 @@ export class AIController {
       }
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
         fetchTimezones(),
-        fetchCountries()
+        fetchCountries(),
+        fetchCurrencies()
       ]);
 
       const suggestions = await AIService.generateGigSuggestions(
@@ -181,7 +212,8 @@ export class AIController {
         languagesData,
         skillsData,
         timezonesData,
-        countriesData
+        countriesData,
+        currenciesData
       );
 
       res.status(200).json(suggestions);
@@ -298,13 +330,14 @@ export class AIController {
       }
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
         fetchTimezones(),
-        fetchCountries()
+        fetchCountries(),
+        fetchCurrencies()
       ]);
 
       // Utiliser la fonction generateGigSuggestions avec juste le titre comme description
@@ -315,7 +348,8 @@ export class AIController {
         languagesData,
         skillsData,
         timezonesData,
-        countriesData
+        countriesData,
+        currenciesData
       );
 
       res.status(200).json(suggestions);
@@ -342,13 +376,14 @@ export class AIController {
       }
 
       // Récupérer les vraies données depuis l'API externe
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData] = await Promise.all([
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
         fetchTimezones(),
-        fetchCountries()
+        fetchCountries(),
+        fetchCurrencies()
       ]);
 
       // Déterminer la catégorie basée sur la description
@@ -484,12 +519,13 @@ export class AIController {
    */
   static async testApiConnections(req: Request, res: Response) {
     try {
-      const [activitiesData, industriesData, languagesData, skillsData, timezonesData] = await Promise.all([
+      const [activitiesData, industriesData, languagesData, skillsData, timezonesData, currenciesData] = await Promise.all([
         fetchActivities(),
         fetchIndustries(),
         fetchLanguages(),
         fetchSkills(),
-        fetchTimezones()
+        fetchTimezones(),
+        fetchCurrencies()
       ]);
 
       const result = {
@@ -525,6 +561,10 @@ export class AIController {
               count: skillsData.technical.length,
               sample: skillsData.technical.slice(0, 3)
             }
+          },
+          currencies: {
+            count: currenciesData.length,
+            sample: currenciesData.slice(0, 3)
           }
         }
       };
