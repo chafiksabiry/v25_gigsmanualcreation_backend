@@ -1,14 +1,5 @@
 import { Document, model, Schema } from 'mongoose';
 import mongoose from 'mongoose';
-import countries from 'i18n-iso-countries';
-
-// Initialiser les pays en français
-countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
-
-// Fonction de validation pour les codes pays alpha-2
-const validateCountryCode = (value: string) => {
-  return countries.isValid(value) && value.length === 2;
-};
 
 export interface IGig extends Document {
   title: string;
@@ -16,7 +7,7 @@ export interface IGig extends Document {
   category: string;
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
-  destination_zone: string;
+  destination_zone: mongoose.Types.ObjectId;
   activities: mongoose.Types.ObjectId[];
   industries: mongoose.Types.ObjectId[];
   seniority: {
@@ -120,11 +111,9 @@ export const GigSchema = new Schema<IGig>(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
     destination_zone: { 
-      type: String,
-      validate: {
-        validator: validateCountryCode,
-        message: 'Le code pays doit être un code alpha-2 valide (ex: FR, US, DE)'
-      }
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Country', 
+      required: false 
     },
     activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
