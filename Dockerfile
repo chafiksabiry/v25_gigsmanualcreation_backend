@@ -26,6 +26,7 @@ ENV SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 ENV API_URL=https://api-gigsmanual.harx.ai/api
 ENV REP_URL=https://api-repcreationwizard.harx.ai/api
 ENV COUNTRIES_API_URL=https://api-gigsmanual.harx.ai/api/countries
+ENV CURRENCIES_API_URL=https://api-gigsmanual.harx.ai/api/currencies
 ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j
 ENV CLOUDINARY_API_KEY=981166483223979
 ENV CLOUDINARY_API_SECRET=i3nxRvfOF1jjfLzMHKE8mP4aXVM

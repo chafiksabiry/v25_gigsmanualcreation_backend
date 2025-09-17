@@ -6,6 +6,7 @@ import cors from 'cors';
 import gigRoutes from './route/gigRoute';
 import aiRoutes from './route/aiRoute';
 import countryRoutes from './route/countryRoute';
+import currencyRoutes from './route/currencyRoute';
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
@@ -94,6 +95,9 @@ app.use('/api/ai', aiRoutes);
 
 // Utilisation des routes pour les pays
 app.use('/api/countries', countryRoutes);
+
+// Utilisation des routes pour les devises
+app.use('/api/currencies', currencyRoutes);
 
 // Route de base
 app.get('/', (req, res) => {

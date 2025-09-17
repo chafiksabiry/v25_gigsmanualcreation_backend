@@ -19,7 +19,14 @@
     "test-norway": "npx ts-node src/scripts/testNorwayDetection.ts",
     "test-norway-timezone": "npx ts-node src/scripts/testNorwayTimezone.ts",
     "test-turkey": "npx ts-node src/scripts/testTurkeyDetection.ts",
-    "test-simple-country": "npx ts-node src/scripts/testSimpleCountryDetection.ts"
+    "test-simple-country": "npx ts-node src/scripts/testSimpleCountryDetection.ts",
+    "seed-currencies": "npx ts-node src/scripts/seedCurrencies.ts",
+    "test-currencies": "npx ts-node src/scripts/testCurrencyEndpoints.ts",
+    "seed-currencies-api": "node src/scripts/seedViaAPI.js",
+    "fix-currencies": "node src/scripts/fixCurrencies.js",
+    "test-mongodb": "node src/scripts/testMongoDB.js",
+    "test-all-currencies": "node src/scripts/testAllCurrencies.js",
+    "test-default-currencies": "node src/scripts/testDefaultAllCurrencies.js"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",
