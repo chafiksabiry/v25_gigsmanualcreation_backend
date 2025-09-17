@@ -421,16 +421,16 @@ export class AIService {
     }
 
     // Créer les listes pour le prompt OpenAI (optimisées pour réduire les tokens)
-    const activityNames = activitiesData.slice(0, 20).map(activity => activity.name); // Limiter à 20
-    const industryNames = industriesData.slice(0, 15).map(industry => industry.name); // Limiter à 15
-    const languageNames = languagesData.slice(0, 15).map(lang => lang.name); // Limiter à 15
-    const softSkillNames = skillsData.soft.slice(0, 15).map(skill => skill.name); // Limiter à 15
-    const professionalSkillNames = skillsData.professional.slice(0, 15).map(skill => skill.name); // Limiter à 15
-    const technicalSkillNames = skillsData.technical.slice(0, 15).map(skill => skill.name); // Limiter à 15
-    const currencyNames = currenciesData ? currenciesData.slice(0, 20).map(currency => `${currency.code}`) : []; // Seulement les codes
+    const activityNames = activitiesData.slice(0, 10).map(activity => activity.name); // Limiter à 10
+    const industryNames = industriesData.slice(0, 10).map(industry => industry.name); // Limiter à 10
+    const languageNames = languagesData.slice(0, 10).map(lang => lang.name); // Limiter à 10
+    const softSkillNames = skillsData.soft.slice(0, 10).map(skill => skill.name); // Limiter à 10
+    const professionalSkillNames = skillsData.professional.slice(0, 10).map(skill => skill.name); // Limiter à 10
+    const technicalSkillNames = skillsData.technical.slice(0, 10).map(skill => skill.name); // Limiter à 10
+    const currencyNames = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}`) : []; // Seulement les codes
     
     // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
-    const priorityCountries = ['France', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
+    const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
     const sortedCountries = countriesData ? [...countriesData].sort((a, b) => {
       const aIsPriority = priorityCountries.includes(a.name.common);
       const bIsPriority = priorityCountries.includes(b.name.common);
@@ -439,24 +439,19 @@ export class AIService {
       return a.name.common.localeCompare(b.name.common);
     }) : [];
     
-    // Limiter à 200 pays maximum pour éviter un prompt trop long
-    const countryOptions = sortedCountries.slice(0, 200).map(country => `${country.name.common}: ${country._id}`).join(', ');
+    // Limiter à 30 pays maximum pour respecter la limite de tokens OpenAI
+    const countryOptions = sortedCountries.slice(0, 30).map(country => `${country.name.common}: ${country._id}`).join(', ');
     
-    console.log(`🔍 Prompt préparé avec ${sortedCountries.length} pays (limité à 200), ${activityNames.length} activités`);
+    console.log(`🔍 Prompt préparé avec ${sortedCountries.length} pays (limité à 30), ${activityNames.length} activités`);
     console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => c.name.common).join(', ')}`);
 
     const prompt = `Based on: "${description}"
 
 IMPORTANT: 
-- Respond in the SAME LANGUAGE as the input description
-- For destination_zone, use ONLY the MongoDB ObjectId from the COUNTRIES list below
-- Analyze the description carefully for country indicators:
-  * Language used (French text = France, English = US/UK)
-  * Currency mentioned (€/EUR = Europe)
-  * Context and terminology
-- Choose the most logical country based on context
-
-Use ONLY the options provided below:
+- Respond in the SAME LANGUAGE as input
+- For destination_zone, use ONLY MongoDB ObjectId from COUNTRIES list
+- Detect country from language/currency/context
+- Use only options below:
 
 CATEGORIES (choose the most appropriate one):
 ${PREDEFINED_CATEGORIES.join(', ')}
@@ -485,15 +480,11 @@ ${technicalSkillNames.join(', ')}
 CURRENCIES: ${currencyNames.join(', ')}
 
 RULES:
-- Respond in same language as input
-- Country detection examples:
-  * French terminology → France
-  * "insurance", "healthcare" → US/UK based on other context
-  * Arabic text → Egypt/Morocco/Tunisia based on context
-- For commission: base="Base + Commission", bonus="Performance Bonus", currency=country currency code
-- For schedule: Use specific days (Monday, Tuesday, etc.), no "Other days"
-- For seniority: Entry Level/Junior/Mid-Level/Senior/Manager
-- Extract salary/commission from description
+- Same language as input
+- Match country to context/language
+- Commission: base="Base + Commission", bonus="Performance Bonus"
+- Days: Monday, Tuesday, etc. (no "Other days")
+- Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 
 JSON format:
 {
