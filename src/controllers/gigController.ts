@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { GigRepository } from "../repositories/gigRepository";
 import countries from 'i18n-iso-countries';
 import { Lead } from "../models/leadModel";
+import { Country } from "../models/countryModel";
 
 // Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
@@ -160,13 +161,19 @@ export class GigController {
         return res.status(404).json({ message: "Destination zone not set", data: null });
       }
 
-      const countryName = countries.getName(destinationZone, 'fr');
+      // Récupérer les informations du pays depuis la base de données
+      const country = await Country.findById(destinationZone).lean();
+      if (!country) {
+        return res.status(404).json({ message: "Country not found in database", data: null });
+      }
       
       res.status(200).json({ 
         message: "Gig destination zone retrieved successfully", 
         data: {
-          code: destinationZone,
-          name: countryName
+          id: country._id,
+          code: country.cca2,
+          name: country.name.common,
+          officialName: country.name.official
         }
       });
     } catch (error) {
