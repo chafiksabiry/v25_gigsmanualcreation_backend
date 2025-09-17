@@ -43,16 +43,12 @@ export class GigController {
         return res.status(400).json({ message: "Title and description are required", data: null });
       }
 
-      // Valider et convertir le code pays si fourni
-      if (req.body.destination_zone) {
-        const countryCode = getCountryCode(req.body.destination_zone);
-        if (!countryCode) {
-          return res.status(400).json({ 
-            message: "Le pays doit être un nom de pays valide ou un code alpha-2 (ex: France, FR, US)", 
-            data: null 
-          });
-        }
-        req.body.destination_zone = countryCode;
+      // Valider que destination_zone est un ObjectId valide si fourni
+      if (req.body.destination_zone && !mongoose.Types.ObjectId.isValid(req.body.destination_zone)) {
+        return res.status(400).json({ 
+          message: "destination_zone must be a valid MongoDB ObjectId", 
+          data: null 
+        });
       }
 
       const newGig = await GigService.createGig(req.body);
@@ -124,6 +120,14 @@ export class GigController {
       
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
+      }
+
+      // Valider que destination_zone est un ObjectId valide si fourni dans les données de mise à jour
+      if (updateData.destination_zone && !mongoose.Types.ObjectId.isValid(updateData.destination_zone)) {
+        return res.status(400).json({ 
+          message: "destination_zone must be a valid MongoDB ObjectId", 
+          data: null 
+        });
       }
 
       const updatedGig = await GigService.updateGig(id, updateData);

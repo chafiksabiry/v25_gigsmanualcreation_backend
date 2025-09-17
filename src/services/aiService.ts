@@ -420,18 +420,22 @@ export class AIService {
     const professionalSkillNames = skillsData.professional.slice(0, 15).map(skill => skill.name); // Limiter à 15
     const technicalSkillNames = skillsData.technical.slice(0, 15).map(skill => skill.name); // Limiter à 15
     const currencyNames = currenciesData ? currenciesData.slice(0, 20).map(currency => `${currency.code}`) : []; // Seulement les codes
+    const countryOptions = countriesData ? countriesData.slice(0, 50).map(country => `${country.name.common}: ${country._id}`).join(', ') : 'No countries available';
 
     const prompt = `Based on: "${description}"
 
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as the input description
-- Detect target country from context (Egypt→EG, France→FR, Morocco→MA, etc.)
-- Use appropriate currency for the country
+- For destination_zone, use ONLY the MongoDB ObjectId from the COUNTRIES list below
+- Detect target country from context and use its corresponding ObjectId
 
 Use ONLY the options provided below:
 
 CATEGORIES (choose the most appropriate one):
 ${PREDEFINED_CATEGORIES.join(', ')}
+
+COUNTRIES (use the ObjectId for destination_zone):
+${countryOptions}
 
 ACTIVITIES (choose the most relevant ones):
 ${activityNames.join(', ')}
@@ -468,7 +472,7 @@ JSON format:
   "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
   "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
-  "destination_zone": "Switzerland",
+  "destination_zone": "MONGODB_OBJECTID_FROM_COUNTRIES_LIST",
   "activities": ["activity1", "activity2"],
   "industries": ["industry1", "industry2"],
   "seniority": {
@@ -571,40 +575,15 @@ JSON format:
       try {
         const parsedResponse = this.parseOpenAIResponse(content);
         
-        // Convertir les noms en IDs pour maintenir les références
+        // OpenAI doit retourner directement les ObjectIds MongoDB - pas de conversion nécessaire
+        console.log(`🔍 destination_zone reçu d'OpenAI: "${parsedResponse.destination_zone}"`);
         
-        // ANALYSE INTELLIGENTE: Détecter le pays mentionné dans la description
-        const fullContext = `${description} ${JSON.stringify(parsedResponse)}`;
-        console.log(`🔍 ===== DÉBUT ANALYSE PAYS =====`);
-        console.log(`🔍 destination_zone original de l'AI = "${parsedResponse.destination_zone}"`);
-        console.log(`🔍 Description à analyser: "${description}"`);
-        console.log(`🔍 countriesData disponible: ${countriesData ? countriesData.length : 'NULL'} pays`);
-        
-        if (countriesData && countriesData.length > 0) {
-          console.log(`🔍 Exemple pays dans countriesData: ${countriesData.slice(0, 3).map(c => c.name?.common).join(', ')}`);
-          
-          const detectedCountry = this.analyzeDescriptionForCountry(description, countriesData);
-          console.log(`🔍 Pays détecté par l'analyse: "${detectedCountry}"`);
-          
-          // Si un pays a été détecté dans la description, forcer la correction
-          if (detectedCountry) {
-            const countryId = this.findCountryId(detectedCountry, countriesData, fullContext);
-            console.log(`🔍 ID trouvé pour "${detectedCountry}": "${countryId}"`);
-            if (countryId) {
-              const originalDestination = parsedResponse.destination_zone;
-              parsedResponse.destination_zone = countryId;
-              console.log(`🌍 ✅ CORRECTION APPLIQUÉE: "${originalDestination}" → "${countryId}" (${detectedCountry})`);
-            } else {
-              console.log(`❌ ERREUR: Aucun ID trouvé pour "${detectedCountry}"`);
-            }
-          } else {
-            console.log(`⚠️ AUCUN PAYS DÉTECTÉ dans la description`);
-          }
+        // Valider que destination_zone est un ObjectId valide
+        if (parsedResponse.destination_zone && typeof parsedResponse.destination_zone === 'string' && parsedResponse.destination_zone.length === 24) {
+          console.log(`✅ destination_zone est un ObjectId valide: ${parsedResponse.destination_zone}`);
         } else {
-          console.log(`❌ ERREUR CRITIQUE: countriesData vide ou null - impossible d'analyser`);
-          console.log(`⚠️ L'AI OpenAI doit détecter le pays correctement dans destination_zone`);
+          console.log(`⚠️ destination_zone n'est pas un ObjectId MongoDB valide: "${parsedResponse.destination_zone}"`);
         }
-        console.log(`🔍 ===== FIN ANALYSE PAYS =====`);
         
         // Valider et corriger la catégorie
         if (parsedResponse.category) {
@@ -690,20 +669,6 @@ JSON format:
           );
           parsedResponse.availability.time_zone = timezoneId;
           
-          // destination_zone utilise les IDs MongoDB des pays (comme les timezones)
-          if (parsedResponse.destination_zone && countriesData) {
-            const originalDestination = parsedResponse.destination_zone;
-            const countryId = this.findCountryId(
-              parsedResponse.destination_zone,
-              countriesData,
-              timezoneContext
-            );
-            if (countryId) {
-              parsedResponse.destination_zone = countryId;
-              console.log(`🌍 Conversion destination_zone: "${originalDestination}" → ${countryId}`);
-            }
-          }
-          
           // Mettre à jour la currency basée sur la timezone
           if (parsedResponse.commission) {
             const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
@@ -712,20 +677,6 @@ JSON format:
             } else {
               parsedResponse.commission.currency = currencyCode;
             }
-          }
-        }
-
-        // Si pas d'availability.time_zone mais destination_zone existe, traiter l'ID pays
-        if (parsedResponse.destination_zone && countriesData && !parsedResponse.availability?.time_zone) {
-          const originalDestination = parsedResponse.destination_zone;
-          const countryId = this.findCountryId(
-            parsedResponse.destination_zone, 
-            countriesData,
-            timezoneContext
-          );
-          if (countryId) {
-            parsedResponse.destination_zone = countryId;
-            console.log(`🌍 Conversion destination_zone (fallback): "${originalDestination}" → ${countryId}`);
           }
         }
 
