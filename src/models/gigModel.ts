@@ -58,7 +58,7 @@ export interface IGig extends Document {
     bonus?: string;
     bonusAmount?: string;
     structure?: string;
-    currency: string;
+    currency: mongoose.Types.ObjectId;
     minimumVolume: {
       amount: string;
       period: string;
@@ -89,7 +89,7 @@ export interface IGig extends Document {
         yearsExperience: string;
       };
     }>;
-    territories: string[];
+    territories: mongoose.Types.ObjectId[];
   };
   documentation: {
     product?: { name: string; url: string }[];
@@ -165,7 +165,7 @@ export const GigSchema = new Schema<IGig>(
       bonus: String,
       bonusAmount: String,
       structure: String,
-      currency: { type: String, required: false },
+      currency: { type: mongoose.Schema.Types.ObjectId, ref: 'Currency', required: false },
       minimumVolume: {
         amount: { type: String, required: false },
         period: { type: String, required: false },
@@ -200,7 +200,7 @@ export const GigSchema = new Schema<IGig>(
           },
         },
       ],
-      territories: [{ type: String }],
+      territories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Country', required: false }],
     },
     documentation: {
       product: [

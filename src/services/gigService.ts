@@ -9,6 +9,7 @@ import '../models/skillModels';
 import '../models/timezoneModel';
 import '../models/userModel';
 import '../models/companyModel';
+import '../models/currencyModel';
 
 export class GigService {
   private gigRepository: GigRepository;
@@ -38,6 +39,8 @@ export class GigService {
         .populate('industries')
         .populate('destination_zone')
         .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
@@ -54,11 +57,13 @@ export class GigService {
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
-        .populate('availability.time_zone')
         .populate('companyId');
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
@@ -77,6 +82,8 @@ export class GigService {
         .populate('industries')
         .populate('destination_zone')
         .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
@@ -101,11 +108,13 @@ export class GigService {
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
-        .populate('availability.time_zone')
         .populate('companyId');
       
       if (!gig) {
@@ -217,6 +226,8 @@ export class GigService {
         .populate('industries')
         .populate('destination_zone')
         .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
@@ -239,6 +250,8 @@ export class GigService {
         .populate('industries')
         .populate('destination_zone')
         .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
@@ -283,6 +296,8 @@ export class GigService {
         .populate('industries')
         .populate('destination_zone')
         .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
