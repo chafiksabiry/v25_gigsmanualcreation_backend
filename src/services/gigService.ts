@@ -33,7 +33,15 @@ export class GigService {
 
   static async getAllGigs() {
     try {
-      return await Gig.find();
+      return await Gig.find()
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
@@ -64,7 +72,15 @@ export class GigService {
         throw new Error("Invalid Gig ID format");
       }
 
-      const gig = await Gig.findById(id);
+      const gig = await Gig.findById(id)
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       if (!gig) {
         throw new Error("Gig not found");
       }
@@ -196,7 +212,15 @@ export class GigService {
         throw new Error("Invalid User ID format");
       }
 
-      const gigs = await Gig.find({ userId });
+      const gigs = await Gig.find({ userId })
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       return gigs;
     } catch (error) {
       console.error("Error in getGigsByUserId:", error);
@@ -214,6 +238,7 @@ export class GigService {
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
+        .populate('availability.time_zone')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
@@ -253,7 +278,15 @@ export class GigService {
 
       const lastGig = await Gig.findOne({ companyId })
         .sort({ createdAt: -1 })
-        .limit(1);
+        .limit(1)
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
 
       return lastGig;
     } catch (error) {

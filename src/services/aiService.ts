@@ -1,10 +1,20 @@
 import { ok } from 'node:assert';
 import OpenAI from 'openai';
 
-// Configuration sécurisée d'OpenAI côté backend
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Configuration sécurisée d'OpenAI côté backend - initialisation conditionnelle
+let openai: OpenAI | null = null;
+
+const getOpenAIClient = (): OpenAI => {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OpenAI API key not configured properly');
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+};
 
 export interface GigSuggestion {
   title: string;
@@ -574,7 +584,7 @@ JSON format:
     return retryWithBackoff(async () => {
       console.log('🤖 Appel OpenAI en cours...');
       
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAIClient().chat.completions.create({
         model: 'gpt-4',
         messages: [
           {
@@ -776,7 +786,7 @@ Return JSON in this exact format:
 }`;
 
     return retryWithBackoff(async () => {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAIClient().chat.completions.create({
         model: 'gpt-4',
         messages: [
           {
@@ -874,7 +884,7 @@ Format your response as a JSON object with the following structure:
 }`;
 
     return retryWithBackoff(async () => {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAIClient().chat.completions.create({
         model: 'gpt-4',
         messages: [
           {
@@ -922,7 +932,7 @@ Description: ${description}
 Example response format: ["US", "CA", "UK", "DE"]`;
 
     return retryWithBackoff(async () => {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAIClient().chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [
           {
