@@ -5,10 +5,7 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "nodemon --exec npx ts-node src/server.ts",
-    "build": "tsc",
-    "import-countries": "npx ts-node src/scripts/importCountries.ts",
-    "import-countries-js": "node src/scripts/importCountries.js",
-    "clean-countries": "npx ts-node src/scripts/cleanCountries.ts"
+    "build": "tsc"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",

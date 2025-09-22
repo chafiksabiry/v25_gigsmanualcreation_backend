@@ -2,6 +2,7 @@ import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
 // Import des modèles pour le populate
+import '../models/sectorModel';
 import '../models/activityModel';
 import '../models/industryModel';
 import '../models/languageModel';
@@ -35,6 +36,7 @@ export class GigService {
   static async getAllGigs() {
     try {
       return await Gig.find()
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -54,6 +56,7 @@ export class GigService {
   static async getActiveGigs() {
     try {
       return await Gig.find({ status: 'active' })
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -78,6 +81,7 @@ export class GigService {
       }
 
       const gig = await Gig.findById(id)
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -105,6 +109,7 @@ export class GigService {
       }
 
       const gig = await Gig.findById(id)
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -222,6 +227,7 @@ export class GigService {
       }
 
       const gigs = await Gig.find({ userId })
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -246,6 +252,7 @@ export class GigService {
       }
 
       const gigs = await Gig.find({ companyId })
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')
@@ -292,6 +299,7 @@ export class GigService {
       const lastGig = await Gig.findOne({ companyId })
         .sort({ createdAt: -1 })
         .limit(1)
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
         .populate('destination_zone')

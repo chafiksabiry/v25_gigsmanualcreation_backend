@@ -7,6 +7,8 @@ import gigRoutes from './route/gigRoute';
 import aiRoutes from './route/aiRoute';
 import countryRoutes from './route/countryRoute';
 import currencyRoutes from './route/currencyRoute';
+import sectorRoutes from './route/sectorRoute';
+import bulkRoutes from './route/bulkRoute';
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
 
@@ -98,6 +100,12 @@ app.use('/api/countries', countryRoutes);
 
 // Utilisation des routes pour les devises
 app.use('/api/currencies', currencyRoutes);
+
+// Utilisation des routes pour les secteurs
+app.use('/api/sectors', sectorRoutes);
+
+// Utilisation des routes pour le traitement en bulk
+app.use('/api/bulk', bulkRoutes);
 
 // Route de base
 app.get('/', (req, res) => {

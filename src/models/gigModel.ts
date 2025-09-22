@@ -8,6 +8,7 @@ export interface IGig extends Document {
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   destination_zone: mongoose.Types.ObjectId;
+  sectors: mongoose.Types.ObjectId[];
   activities: mongoose.Types.ObjectId[];
   industries: mongoose.Types.ObjectId[];
   seniority: {
@@ -115,6 +116,7 @@ export const GigSchema = new Schema<IGig>(
       ref: 'Country', 
       required: false 
     },
+    sectors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Sector', required: false }],
     activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
