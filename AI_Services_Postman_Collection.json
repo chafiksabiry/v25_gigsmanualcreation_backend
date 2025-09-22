@@ -1,0 +1,171 @@
+{
+  "info": {
+    "name": "AI Services - Gig Management",
+    "description": "Collection pour tester les services IA sécurisés du backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5003",
+      "type": "string"
+    },
+    {
+      "key": "apiPath",
+      "value": "/api/ai",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": ["{{baseUrl}}"],
+          "path": [""]
+        }
+      }
+    },
+    {
+      "name": "Generate Gig Suggestions",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"Je cherche un développeur full-stack pour créer une application e-commerce avec React et Node.js. Le candidat doit avoir de l'expérience avec les bases de données MongoDB et les API REST.\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/generate-gig-suggestions",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["generate-gig-suggestions"]
+        }
+      }
+    },
+    {
+      "name": "Generate Skills",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Customer Support Representative\",\n  \"description\": \"Provide excellent customer service via phone and email, handle complaints, and maintain customer satisfaction\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/generate-skills",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["generate-skills"]
+        }
+      }
+    },
+    {
+      "name": "Generate Timezones",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"targetMarkets\": [\"United States\", \"United Kingdom\", \"France\", \"Germany\"],\n  \"businessHours\": \"9:00-17:00\",\n  \"teamDistribution\": \"Global remote team with members in US, Europe, and Asia\",\n  \"coverageRequirements\": \"24/7 customer support coverage needed\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/generate-timezones",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["generate-timezones"]
+        }
+      }
+    },
+    {
+      "name": "Generate Destinations",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Sales Representative\",\n  \"description\": \"Sell software solutions to enterprise clients in technology sector\",\n  \"category\": \"Sales\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/generate-destinations",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["generate-destinations"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Title",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Digital Marketing Specialist\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/analyze-title",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["analyze-title"]
+        }
+      }
+    },
+    {
+      "name": "Test API Connections",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/test-api-connections",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["test-api-connections"]
+        }
+      }
+    },
+    {
+      "name": "Test Gig Suggestions (No OpenAI)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"Je cherche un développeur full-stack avec React et Node.js pour créer une application e-commerce\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPath}}/test-gig-suggestions",
+          "host": ["{{baseUrl}}{{apiPath}}"],
+          "path": ["test-gig-suggestions"]
+        }
+      }
+    }
+  ]
+}
