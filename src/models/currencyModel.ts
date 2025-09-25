@@ -42,7 +42,7 @@ const currencySchema = new Schema<ICurrency>(
 );
 
 // Index pour améliorer les performances de recherche
-currencySchema.index({ code: 1 });
+// Note: code field already has unique index from schema definition
 currencySchema.index({ name: 1 });
 currencySchema.index({ isActive: 1 });
 

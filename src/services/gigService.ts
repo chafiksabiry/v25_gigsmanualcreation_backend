@@ -134,10 +134,15 @@ export class GigService {
 
   static async updateGig(id: string, updateData: any) {
     try {
+      console.log('🔍 SERVICE - updateGig called with ID:', id);
+      console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
+      
       if (!mongoose.Types.ObjectId.isValid(id)) {
+        console.log('❌ SERVICE - Invalid Gig ID format:', id);
         throw new Error("Invalid Gig ID format");
       }
 
+      console.log('🔍 SERVICE - Calling Gig.findByIdAndUpdate...');
       // Utiliser $set pour la mise à jour partielle
       const updatedGig = await Gig.findByIdAndUpdate(
         id,
@@ -149,12 +154,16 @@ export class GigService {
       );
 
       if (!updatedGig) {
+        console.log('❌ SERVICE - Gig not found with ID:', id);
         throw new Error("Gig not found");
       }
 
+      console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
       return updatedGig;
     } catch (error) {
-      console.error("Error in updateGig:", error);
+      console.error("❌ SERVICE - Error in updateGig:", error);
+      console.error("❌ SERVICE - Error details:", error instanceof Error ? error.message : 'Unknown error');
+      console.error("❌ SERVICE - Error stack:", error instanceof Error ? error.stack : 'No stack trace');
       throw error;
     }
   }
