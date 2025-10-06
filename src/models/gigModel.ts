@@ -1,14 +1,5 @@
 import { Document, model, Schema } from 'mongoose';
 import mongoose from 'mongoose';
-import countries from 'i18n-iso-countries';
-
-// Initialiser les pays en français
-countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
-
-// Fonction de validation pour les codes pays alpha-2
-const validateCountryCode = (value: string) => {
-  return countries.isValid(value) && value.length === 2;
-};
 
 export interface IGig extends Document {
   title: string;
@@ -16,7 +7,8 @@ export interface IGig extends Document {
   category: string;
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
-  destination_zone: string;
+  destination_zone: mongoose.Types.ObjectId;
+  sectors: mongoose.Types.ObjectId[];
   activities: mongoose.Types.ObjectId[];
   industries: mongoose.Types.ObjectId[];
   seniority: {
@@ -67,7 +59,7 @@ export interface IGig extends Document {
     bonus?: string;
     bonusAmount?: string;
     structure?: string;
-    currency: string;
+    currency: mongoose.Types.ObjectId;
     minimumVolume: {
       amount: string;
       period: string;
@@ -98,13 +90,15 @@ export interface IGig extends Document {
         yearsExperience: string;
       };
     }>;
-    territories: string[];
+    territories: mongoose.Types.ObjectId[];
   };
   documentation: {
     product?: { name: string; url: string }[];
     process?: { name: string; url: string }[];
     training?: { name: string; url: string }[];
   };
+  highlights: string[];
+  deliverables: string[];
   status: 'to_activate' | 'active' | 'inactive' | 'archived';
   createdAt: Date;
   updatedAt: Date;
@@ -118,12 +112,11 @@ export const GigSchema = new Schema<IGig>(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
     destination_zone: { 
-      type: String,
-      validate: {
-        validator: validateCountryCode,
-        message: 'Le code pays doit être un code alpha-2 valide (ex: FR, US, DE)'
-      }
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Country', 
+      required: false 
     },
+    sectors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Sector', required: false }],
     activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
@@ -174,7 +167,7 @@ export const GigSchema = new Schema<IGig>(
       bonus: String,
       bonusAmount: String,
       structure: String,
-      currency: { type: String, required: false },
+      currency: { type: mongoose.Schema.Types.ObjectId, ref: 'Currency', required: false },
       minimumVolume: {
         amount: { type: String, required: false },
         period: { type: String, required: false },
@@ -209,7 +202,7 @@ export const GigSchema = new Schema<IGig>(
           },
         },
       ],
-      territories: [{ type: String }],
+      territories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Country', required: false }],
     },
     documentation: {
       product: [
@@ -231,6 +224,8 @@ export const GigSchema = new Schema<IGig>(
         },
       ],
     },
+    highlights: [{ type: String, required: false }],
+    deliverables: [{ type: String, required: false }],
     status: { 
       type: String, 
       enum: ['to_activate', 'active', 'inactive', 'archived'], 

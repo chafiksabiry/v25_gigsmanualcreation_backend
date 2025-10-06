@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { GigRepository } from "../repositories/gigRepository";
 import countries from 'i18n-iso-countries';
 import { Lead } from "../models/leadModel";
+import { Country } from "../models/countryModel";
 
 // Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
@@ -42,16 +43,12 @@ export class GigController {
         return res.status(400).json({ message: "Title and description are required", data: null });
       }
 
-      // Valider et convertir le code pays si fourni
-      if (req.body.destination_zone) {
-        const countryCode = getCountryCode(req.body.destination_zone);
-        if (!countryCode) {
-          return res.status(400).json({ 
-            message: "Le pays doit être un nom de pays valide ou un code alpha-2 (ex: France, FR, US)", 
-            data: null 
-          });
-        }
-        req.body.destination_zone = countryCode;
+      // Valider que destination_zone est un ObjectId valide si fourni
+      if (req.body.destination_zone && !mongoose.Types.ObjectId.isValid(req.body.destination_zone)) {
+        return res.status(400).json({ 
+          message: "destination_zone must be a valid MongoDB ObjectId", 
+          data: null 
+        });
       }
 
       const newGig = await GigService.createGig(req.body);
@@ -121,22 +118,40 @@ export class GigController {
       const id = req.params.id;
       const updateData = req.body;
       
+      console.log('🔍 BACKEND - Update gig request received');
+      console.log('🔍 BACKEND - Gig ID:', id);
+      console.log('🔍 BACKEND - Update data:', JSON.stringify(updateData, null, 2));
+      
       if (!mongoose.Types.ObjectId.isValid(id)) {
+        console.log('❌ BACKEND - Invalid Gig ID format:', id);
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
       }
 
+      // Valider que destination_zone est un ObjectId valide si fourni dans les données de mise à jour
+      if (updateData.destination_zone && !mongoose.Types.ObjectId.isValid(updateData.destination_zone)) {
+        console.log('❌ BACKEND - Invalid destination_zone ObjectId:', updateData.destination_zone);
+        return res.status(400).json({ 
+          message: "destination_zone must be a valid MongoDB ObjectId", 
+          data: null 
+        });
+      }
+
+      console.log('🔍 BACKEND - Calling GigService.updateGig...');
       const updatedGig = await GigService.updateGig(id, updateData);
       
       if (!updatedGig) {
+        console.log('❌ BACKEND - Gig not found:', id);
         return res.status(404).json({ message: "Gig not found", data: null });
       }
 
+      console.log('✅ BACKEND - Gig updated successfully:', updatedGig._id);
       return res.status(200).json({
         message: "Gig updated successfully",
         data: updatedGig
       });
     } catch (error) {
-      console.error('Error in updateGig:', error);
+      console.error('❌ BACKEND - Error in updateGig:', error);
+      console.error('❌ BACKEND - Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       return res.status(500).json({
         message: "Failed to update gig",
         data: null
@@ -160,13 +175,19 @@ export class GigController {
         return res.status(404).json({ message: "Destination zone not set", data: null });
       }
 
-      const countryName = countries.getName(destinationZone, 'fr');
+      // Récupérer les informations du pays depuis la base de données
+      const country = await Country.findById(destinationZone).lean();
+      if (!country) {
+        return res.status(404).json({ message: "Country not found in database", data: null });
+      }
       
       res.status(200).json({ 
         message: "Gig destination zone retrieved successfully", 
         data: {
-          code: destinationZone,
-          name: countryName
+          id: country._id,
+          code: country.cca2,
+          name: country.name.common,
+          officialName: country.name.official
         }
       });
     } catch (error) {

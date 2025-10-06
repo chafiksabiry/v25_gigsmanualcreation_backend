@@ -2,6 +2,7 @@ import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
 // Import des modèles pour le populate
+import '../models/sectorModel';
 import '../models/activityModel';
 import '../models/industryModel';
 import '../models/languageModel';
@@ -9,6 +10,7 @@ import '../models/skillModels';
 import '../models/timezoneModel';
 import '../models/userModel';
 import '../models/companyModel';
+import '../models/currencyModel';
 
 export class GigService {
   private gigRepository: GigRepository;
@@ -34,6 +36,17 @@ export class GigService {
   static async getAllGigs() {
     try {
       return await Gig.find()
+        .populate('sectors')
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
@@ -43,13 +56,17 @@ export class GigService {
   static async getActiveGigs() {
     try {
       return await Gig.find({ status: 'active' })
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
-        .populate('availability.time_zone')
         .populate('companyId');
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
@@ -63,7 +80,18 @@ export class GigService {
         throw new Error("Invalid Gig ID format");
       }
 
-      const gig = await Gig.findById(id);
+      const gig = await Gig.findById(id)
+        .populate('sectors')
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       if (!gig) {
         throw new Error("Gig not found");
       }
@@ -81,13 +109,17 @@ export class GigService {
       }
 
       const gig = await Gig.findById(id)
+        .populate('sectors')
         .populate('activities')
         .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
         .populate('skills.professional.skill')
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
-        .populate('availability.time_zone')
         .populate('companyId');
       
       if (!gig) {
@@ -102,10 +134,15 @@ export class GigService {
 
   static async updateGig(id: string, updateData: any) {
     try {
+      console.log('🔍 SERVICE - updateGig called with ID:', id);
+      console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
+      
       if (!mongoose.Types.ObjectId.isValid(id)) {
+        console.log('❌ SERVICE - Invalid Gig ID format:', id);
         throw new Error("Invalid Gig ID format");
       }
 
+      console.log('🔍 SERVICE - Calling Gig.findByIdAndUpdate...');
       // Utiliser $set pour la mise à jour partielle
       const updatedGig = await Gig.findByIdAndUpdate(
         id,
@@ -117,17 +154,21 @@ export class GigService {
       );
 
       if (!updatedGig) {
+        console.log('❌ SERVICE - Gig not found with ID:', id);
         throw new Error("Gig not found");
       }
 
+      console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
       return updatedGig;
     } catch (error) {
-      console.error("Error in updateGig:", error);
+      console.error("❌ SERVICE - Error in updateGig:", error);
+      console.error("❌ SERVICE - Error details:", error instanceof Error ? error.message : 'Unknown error');
+      console.error("❌ SERVICE - Error stack:", error instanceof Error ? error.stack : 'No stack trace');
       throw error;
     }
   }
 
-  async updateGig(id: string, updateData: any): Promise<any> {
+  async updateGigInstance(id: string, updateData: any): Promise<any> {
     try {
       const existingGig = await this.gigRepository.findById(id);
       if (!existingGig) {
@@ -194,7 +235,18 @@ export class GigService {
         throw new Error("Invalid User ID format");
       }
 
-      const gigs = await Gig.find({ userId });
+      const gigs = await Gig.find({ userId })
+        .populate('sectors')
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       return gigs;
     } catch (error) {
       console.error("Error in getGigsByUserId:", error);
@@ -208,7 +260,18 @@ export class GigService {
         throw new Error("Invalid Company ID format");
       }
 
-      const gigs = await Gig.find({ companyId });
+      const gigs = await Gig.find({ companyId })
+        .populate('sectors')
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
       return gigs;
     } catch (error) {
       console.error("Error in getGigsByCompanyId:", error);
@@ -244,7 +307,18 @@ export class GigService {
 
       const lastGig = await Gig.findOne({ companyId })
         .sort({ createdAt: -1 })
-        .limit(1);
+        .limit(1)
+        .populate('sectors')
+        .populate('activities')
+        .populate('industries')
+        .populate('destination_zone')
+        .populate('availability.time_zone')
+        .populate('commission.currency')
+        .populate('team.territories')
+        .populate('skills.professional.skill')
+        .populate('skills.technical.skill')
+        .populate('skills.soft.skill')
+        .populate('skills.languages.language');
 
       return lastGig;
     } catch (error) {
