@@ -19,9 +19,9 @@ const port = process.env.PORT || 5003;
 const corsOptions = {
   origin: [
     'https://v25.harx.ai',
-    'https://v25-preprod.harx.ai',
+    'https://v25-prod.harx.ai',
     'https://gigsai.harx.ai',
-    'https://gigsai-preprod.harx.ai',
+    'https://gigsai-prod.harx.ai',
     'http://localhost:5179',
     'http://localhost:3000',
     'http://localhost:3001',
@@ -50,7 +50,7 @@ const corsOptions = {
 app.use((req, res, next) => {
   const allowedOrigins = [
     'https://v25.harx.ai',
-    'https://v25-preprod.harx.ai',
+    'https://v25-prod.harx.ai',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',

@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 
 ENV PORT=5003
-ENV MONGO_URI=mongodb://harx:ix5S3vU6BjKn4MHp@207.180.226.2:27017/V25_HarxPreProd
+ENV MONGO_URI=mongodb://harx:ix5S3vU6BjKn4MHp@207.180.226.2:27017/V25_HarxProd
 
 ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j
 ENV CLOUDINARY_API_KEY=981166483223979
@@ -23,14 +23,14 @@ ENV CLOUDINARY_VIDEO_LIMIT_SIZE_MB=100
 ENV CLOUDINARY_VIDEO_LIMIT_SIZE_BYTE=104857600
 ENV SUPABASE_URL=https://himswpxnatldpsmndqlf.supabase.co
 ENV SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhpbXN3cHhuYXRsZHBzbW5kcWxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYyNDYyNjIsImV4cCI6MjA1MTgyMjI2Mn0.gBI2-Vbex1brojL2Izo-FPMOWzs8buzg64oM_8FzBr0
-ENV API_URL=https://preprod-api-gigsmanual.harx.ai/api
-ENV REP_URL=https://preprod-api-repcreationwizard.harx.ai/api
-ENV COUNTRIES_API_URL=https://preprod-api-gigsmanual.harx.ai/api/countries
-ENV CURRENCIES_API_URL=https://preprod-api-gigsmanual.harx.ai/api/currencies
+ENV API_URL=https://prod-api-gigsmanual.harx.ai/api
+ENV REP_URL=https://prod-api-repcreationwizard.harx.ai/api
+ENV COUNTRIES_API_URL=https://prod-api-gigsmanual.harx.ai/api/countries
+ENV CURRENCIES_API_URL=https://prod-api-gigsmanual.harx.ai/api/currencies
 ENV CLOUDINARY_CLOUD_NAME=dyqg8x26j
 ENV CLOUDINARY_API_KEY=981166483223979
 ENV CLOUDINARY_API_SECRET=i3nxRvfOF1jjfLzMHKE8mP4aXVM
-ENV URL_ONBOARDING=https://preprod-api-companysearchwizard.harx.ai/api
+ENV URL_ONBOARDING=https://prod-api-companysearchwizard.harx.ai/api
 ENV STANDALONE=true
 ENV USER_ID=680a27ffefa3d29d628d0016
 ENV COMPANY_ID=684ace43641398dc582f1acc
