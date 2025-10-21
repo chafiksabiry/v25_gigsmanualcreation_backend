@@ -56,7 +56,9 @@ app.use((req, res, next) => {
     'http://localhost:5173',
     'http://localhost:5179',
     'http://localhost:5183',
-    'https://copilot.harx.ai'
+    'https://copilot.harx.ai',
+    'http://localhost:5190/',
+    'https://training.harx.ai/'
   ];
   
   const origin = req.headers.origin;
