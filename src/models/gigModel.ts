@@ -1,26 +1,51 @@
 import { Document, model, Schema } from 'mongoose';
+import mongoose from 'mongoose';
 
 export interface IGig extends Document {
   title: string;
   description: string;
   category: string;
+  userId: mongoose.Types.ObjectId;
+  companyId: mongoose.Types.ObjectId;
+  destination_zone: mongoose.Types.ObjectId;
+  sectors: mongoose.Types.ObjectId[];
+  activities: mongoose.Types.ObjectId[];
+  industries: mongoose.Types.ObjectId[];
   seniority: {
     level: string;
     yearsExperience: string;
   };
   skills: {
-    professional: string[];
-    technical: string[];
-    soft: string[];
+    professional: Array<{
+      skill: mongoose.Types.ObjectId;
+      level: number;
+      details: string;
+    }>;
+    technical: Array<{
+      skill: mongoose.Types.ObjectId;
+      level: number;
+      details: string;
+    }>;
+    soft: Array<{
+      skill: mongoose.Types.ObjectId;
+      level: number;
+      details: string;
+    }>;
     languages: Array<{
-      name: string;
-      level: string;
+      language: mongoose.Types.ObjectId;
+      proficiency: string;
+      iso639_1: string;
     }>;
   };
-  schedule: {
-    days: string[];
-    hours: string;
-    timeZones: string[];
+  availability: {
+    schedule: Array<{
+      day: string;
+      hours: {
+        start: string;
+        end: string;
+      };
+    }>;
+    time_zone: mongoose.Types.ObjectId;
     flexibility: string[];
     minimumHours: {
       daily?: number;
@@ -34,7 +59,7 @@ export interface IGig extends Document {
     bonus?: string;
     bonusAmount?: string;
     structure?: string;
-    currency: string;
+    currency: mongoose.Types.ObjectId;
     minimumVolume: {
       amount: string;
       period: string;
@@ -44,6 +69,7 @@ export interface IGig extends Document {
       type: string;
       amount: string;
     };
+    additionalDetails?: string;
   };
   leads: {
     types: Array<{
@@ -64,13 +90,16 @@ export interface IGig extends Document {
         yearsExperience: string;
       };
     }>;
-    territories: string[];
+    territories: mongoose.Types.ObjectId[];
   };
   documentation: {
     product?: { name: string; url: string }[];
     process?: { name: string; url: string }[];
     training?: { name: string; url: string }[];
-  };  
+  };
+  highlights: string[];
+  deliverables: string[];
+  status: 'to_activate' | 'active' | 'inactive' | 'archived';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -80,29 +109,57 @@ export const GigSchema = new Schema<IGig>(
     title: { type: String, required: false },
     description: { type: String, required: false },
     category: { type: String, required: false },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
+    destination_zone: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Country', 
+      required: false 
+    },
+    sectors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Sector', required: false }],
+    activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
+    industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
       level: { type: String, required: false },
       yearsExperience: { type: String, required: false },
     },
     skills: {
-      professional: [{ type: String }],
-      technical: [{ type: String }],
-      soft: [{ type: String }],
+      professional: [{
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'ProfessionalSkill', required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
+      technical: [{
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'TechnicalSkill', required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
+      soft: [{
+        skill: { type: mongoose.Schema.Types.ObjectId, ref: 'SoftSkill', required: false },
+        level: { type: Number, required: false },
+        details: { type: String, required: false }
+      }],
       languages: [{
-        name: { type: String, required: true },
-        level: { type: String, required: true }
+        language: { type: mongoose.Schema.Types.ObjectId, ref: 'Language', required: false },
+        proficiency: { type: String, required: false },
+        iso639_1: { type: String, required: false }
       }]
     },
-    schedule: {
-      days: [{ type: String }],
-      hours: { type: String, required: false },
-      timeZones: [{ type: String }],
+    availability: {
+      schedule: [{
+        day: { type: String, required: false },
+        hours: {
+          start: { type: String, required: false },
+          end: { type: String, required: false }
+        }
+      }],
+      time_zone: { type: mongoose.Schema.Types.ObjectId, ref: 'Timezone', required: false },
       flexibility: [{ type: String }],
       minimumHours: {
-        daily: Number,
-        weekly: Number,
-        monthly: Number,
-      },
+        daily: { type: Number, required: false },
+        weekly: { type: Number, required: false },
+        monthly: { type: Number, required: false }
+      }
     },
     commission: {
       base: { type: String, required: false },
@@ -110,7 +167,7 @@ export const GigSchema = new Schema<IGig>(
       bonus: String,
       bonusAmount: String,
       structure: String,
-      currency: { type: String, required: false },
+      currency: { type: mongoose.Schema.Types.ObjectId, ref: 'Currency', required: false },
       minimumVolume: {
         amount: { type: String, required: false },
         period: { type: String, required: false },
@@ -120,6 +177,7 @@ export const GigSchema = new Schema<IGig>(
         type: { type: String, required: false },
         amount: { type: String, required: false },
       },
+      additionalDetails: { type: String, required: false },
     },
     leads: {
       types: [
@@ -144,7 +202,7 @@ export const GigSchema = new Schema<IGig>(
           },
         },
       ],
-      territories: [{ type: String }],
+      territories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Country', required: false }],
     },
     documentation: {
       product: [
@@ -165,6 +223,14 @@ export const GigSchema = new Schema<IGig>(
           url: { type: String, required: false },
         },
       ],
+    },
+    highlights: [{ type: String, required: false }],
+    deliverables: [{ type: String, required: false }],
+    status: { 
+      type: String, 
+      enum: ['to_activate', 'active', 'inactive', 'archived'], 
+      default: 'to_activate',
+      required: true 
     },
   },
   { timestamps: true }
