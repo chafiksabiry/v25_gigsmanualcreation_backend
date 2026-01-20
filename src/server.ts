@@ -18,23 +18,23 @@ const port = process.env.PORT || 5003;
 // CORS configuration
 const corsOptions = {
   origin: [
-    'https://v25.harx.ai',
-    'https://v25-preprod.harx.ai',
+    'https://harx25pageslinks.netlify.app',
+    'https://harx25pageslinks.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:5179',
     'http://localhost:5183',
-    'https://copilot.harx.ai',
+    'https://harxv25copilotfrontend.netlify.app',
     "http://localhost:5190",
-    "https://training.harx.ai"
+    "https://harxv25trainingplatformfrontend.netlify.app"
 
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'X-Requested-With',
     'Accept',
     'Origin',
@@ -49,33 +49,33 @@ const corsOptions = {
 // Middleware CORS manuel (backup)
 app.use((req, res, next) => {
   const allowedOrigins = [
-    'https://v25.harx.ai',
-    'https://v25-preprod.harx.ai',
+    'https://harx25pageslinks.netlify.app',
+    'https://harx25pageslinks.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:5179',
     'http://localhost:5183',
-    'https://copilot.harx.ai',
+    'https://harxv25copilotfrontend.netlify.app',
     'http://localhost:5190',
-    'https://training.harx.ai'
+    'https://harxv25trainingplatformfrontend.netlify.app'
   ];
-  
+
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin as string)) {
     res.setHeader('Access-Control-Allow-Origin', origin as string);
   }
-  
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-File-Name');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Max-Age', '86400');
-  
+
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
-  
+
   next();
 });
 

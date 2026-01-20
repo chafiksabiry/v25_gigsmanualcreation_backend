@@ -4,8 +4,8 @@ import { AIService, TimezoneGenerationRequest } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 
 // Configuration de l'API externe
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://api-gigsmanual.harx.ai/api/currencies';
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
+const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://v25gigsmanualcreationbackend-production.up.railway.app/api/currencies';
 
 // Types pour les réponses de l'API externe
 interface ApiResponse<T> {
@@ -118,7 +118,7 @@ async function fetchCurrencies(): Promise<Currency[]> {
     console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
     const response = await fetch(CURRENCIES_API_URL);
     const data = await response.json() as ApiResponse<Currency[]>;
-    
+
     if (data.success && data.data) {
       console.log(`✅ ${data.data.length} currencies fetched successfully`);
       return data.data.filter(currency => currency.isActive);
@@ -158,7 +158,7 @@ async function fetchCountries(): Promise<any[]> {
     console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
     const response = await fetch(countriesApiUrl);
     const data = await response.json() as ApiResponse<any[]>;
-    
+
     if (data.success && data.data) {
       console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
       return data.data;
@@ -189,8 +189,8 @@ export class AIController {
       const { description } = req.body;
 
       if (!description) {
-        return res.status(400).json({ 
-          error: 'Description is required' 
+        return res.status(400).json({
+          error: 'Description is required'
         });
       }
 
@@ -219,9 +219,9 @@ export class AIController {
       res.status(200).json(suggestions);
     } catch (error: any) {
       console.error('Error generating gig suggestions:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate gig suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -234,8 +234,8 @@ export class AIController {
       const { title, description } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
@@ -255,9 +255,9 @@ export class AIController {
       res.status(200).json(skills);
     } catch (error: any) {
       console.error('Error generating skills:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate skills',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -270,8 +270,8 @@ export class AIController {
       const request: TimezoneGenerationRequest = req.body;
 
       if (!request.targetMarkets || request.targetMarkets.length === 0) {
-        return res.status(400).json({ 
-          error: 'Target markets are required' 
+        return res.status(400).json({
+          error: 'Target markets are required'
         });
       }
 
@@ -280,9 +280,9 @@ export class AIController {
       res.status(200).json(timezoneResponse);
     } catch (error: any) {
       console.error('Error generating timezones:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate timezone suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -295,8 +295,8 @@ export class AIController {
       const { title, description, category } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
@@ -309,9 +309,9 @@ export class AIController {
       res.status(200).json(destinations);
     } catch (error: any) {
       console.error('Error generating destinations:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate destination suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -324,8 +324,8 @@ export class AIController {
       const { title } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
@@ -355,9 +355,9 @@ export class AIController {
       res.status(200).json(suggestions);
     } catch (error: any) {
       console.error('Error analyzing title:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to analyze title and generate description',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -370,8 +370,8 @@ export class AIController {
       const { description } = req.body;
 
       if (!description) {
-        return res.status(400).json({ 
-          error: 'Description is required' 
+        return res.status(400).json({
+          error: 'Description is required'
         });
       }
 
@@ -388,17 +388,17 @@ export class AIController {
 
       // Déterminer la catégorie basée sur la description
       const category = description.toLowerCase().includes('sales') ? 'Outbound Sales' :
-                      description.toLowerCase().includes('support') ? 'Technical Support' :
-                      description.toLowerCase().includes('service') ? 'Customer Service' :
-                      'Customer Service'; // Default
+        description.toLowerCase().includes('support') ? 'Technical Support' :
+          description.toLowerCase().includes('service') ? 'Customer Service' :
+            'Customer Service'; // Default
 
       // Créer une réponse de test avec les vraies données et le schéma complet
       const testResponse = {
         jobTitles: [`${category} Specialist`, `${category} Agent`, `${category} Representative`],
         jobDescription: `Test description based on: ${description}`,
         category: category,
-        destination_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id || 
-                     timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
+        destination_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id ||
+          timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
         activities: activitiesData.slice(0, 3).map((activity: Activity) => activity._id),
         industries: industriesData.slice(0, 2).map((industry: Industry) => industry._id),
         seniority: {
@@ -434,7 +434,7 @@ export class AIController {
               hours: { start: "09:00", end: "17:00" }
             },
             {
-              day: "Tuesday", 
+              day: "Tuesday",
               hours: { start: "09:00", end: "17:00" }
             },
             {
@@ -450,8 +450,8 @@ export class AIController {
               hours: { start: "09:00", end: "17:00" }
             }
           ],
-          time_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id || 
-                     timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
+          time_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id ||
+            timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
           flexibility: ["Flexible Hours", "Remote Work Available"],
           minimumHours: {
             daily: 4,
@@ -507,9 +507,9 @@ export class AIController {
       res.status(200).json(testResponse);
     } catch (error: any) {
       console.error('Error in test endpoint:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate test suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -572,9 +572,9 @@ export class AIController {
       res.status(200).json(result);
     } catch (error: any) {
       console.error('Error testing API connections:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to connect to external APIs',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -592,24 +592,24 @@ export class AIController {
         industries: ["687cc6372c780dc1639ce1a5", "687cc6372c780dc1639ce1a6"], // IDs réels
         skills: {
           languages: [
-            { 
+            {
               language: "6878c3ba999b0fc08b1b14b5", // ID réel d'Abkhaz
-              proficiency: "B2", 
-              iso639_1: "ab" 
+              proficiency: "B2",
+              iso639_1: "ab"
             }
           ],
           soft: [
-            { 
+            {
               skill: "6868131dc44e8a46719af35c", // ID réel d'Adaptability
-              level: 3, 
-              details: "Important for customer service" 
+              level: 3,
+              details: "Important for customer service"
             }
           ],
           professional: [
-            { 
+            {
               skill: "68681321c44e8a46719af378", // ID réel de CRM System Proficiency
-              level: 4, 
-              details: "Essential for the role" 
+              level: 4,
+              details: "Essential for the role"
             }
           ],
           technical: []
@@ -632,9 +632,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error testing populate:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to test populate functionality',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -645,12 +645,12 @@ export class AIController {
   static async getCategories(req: Request, res: Response) {
     try {
       const categories = [
-        'Inbound Sales', 'Outbound Sales', 'Customer Service', 'Technical Support', 
-        'Account Management', 'Lead Generation', 'Market Research', 'Appointment Setting', 
-        'Order Processing', 'Customer Retention', 'Billing Support', 'Product Support', 
-        'Help Desk', 'Chat Support', 'Email Support', 'Social Media Support', 
-        'Survey Calls', 'Welcome Calls', 'Follow-up Calls', 'Complaint Resolution', 
-        'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support', 
+        'Inbound Sales', 'Outbound Sales', 'Customer Service', 'Technical Support',
+        'Account Management', 'Lead Generation', 'Market Research', 'Appointment Setting',
+        'Order Processing', 'Customer Retention', 'Billing Support', 'Product Support',
+        'Help Desk', 'Chat Support', 'Email Support', 'Social Media Support',
+        'Survey Calls', 'Welcome Calls', 'Follow-up Calls', 'Complaint Resolution',
+        'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support',
         'Multilingual Support'
       ];
 
@@ -661,9 +661,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error getting categories:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to get categories',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -682,9 +682,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error getting timezones:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to get timezones',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -697,8 +697,8 @@ export class AIController {
       const { activities } = req.body;
 
       if (!activities || !Array.isArray(activities)) {
-        return res.status(400).json({ 
-          error: 'Activities array is required' 
+        return res.status(400).json({
+          error: 'Activities array is required'
         });
       }
 
@@ -709,25 +709,25 @@ export class AIController {
       const testResults = activities.map((activityName: string) => {
         // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
         // Recherche exacte d'abord
-        let activity = activitiesData.find(a => 
+        let activity = activitiesData.find(a =>
           a.name.toLowerCase() === activityName.toLowerCase()
         );
-        
+
         let matchType = 'exact';
         let foundId = '';
-        
+
         if (activity) {
           foundId = activity._id;
         } else {
           // Recherche approximative
           const normalizedSearchName = activityName.toLowerCase().trim();
-          
+
           activity = activitiesData.find(a => {
             const normalizedActivityName = a.name.toLowerCase().trim();
-            return normalizedActivityName.includes(normalizedSearchName) || 
-                   normalizedSearchName.includes(normalizedActivityName);
+            return normalizedActivityName.includes(normalizedSearchName) ||
+              normalizedSearchName.includes(normalizedActivityName);
           });
-          
+
           if (activity) {
             foundId = activity._id;
             matchType = 'partial';
@@ -744,10 +744,10 @@ export class AIController {
               'support client': 'Customer Service',
               'service client': 'Customer Service'
             };
-            
+
             const mappedName = manualMappings[normalizedSearchName];
             if (mappedName) {
-              activity = activitiesData.find(a => 
+              activity = activitiesData.find(a =>
                 a.name.toLowerCase() === mappedName.toLowerCase()
               );
               if (activity) {
@@ -755,7 +755,7 @@ export class AIController {
                 matchType = 'manual_mapping';
               }
             }
-            
+
             if (!foundId && activitiesData.length > 0) {
               // Utiliser la première activité par défaut
               foundId = activitiesData[0]._id;
@@ -793,9 +793,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error testing activity mapping:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to test activity mapping',
-        message: error.message 
+        message: error.message
       });
     }
   }

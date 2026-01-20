@@ -5,8 +5,8 @@ const countryModel_1 = require("../models/countryModel");
 const aiService_1 = require("../services/aiService");
 const populateService_1 = require("../services/populateService");
 // Configuration de l'API externe
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://api-gigsmanual.harx.ai/api/currencies';
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
+const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://v25gigsmanualcreationbackend-production.up.railway.app/api/currencies';
 // Fonctions pour récupérer les données depuis l'API externe
 async function fetchActivities() {
     try {

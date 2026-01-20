@@ -47,8 +47,8 @@ npm start
 PORT=5005
 MONGODB_URI=mongodb://localhost:27017/your_database
 OPENAI_API_KEY=your_openai_api_key
-COUNTRIES_API_URL=https://api-gigsmanual.harx.ai/api/countries
-REP_URL=https://api-repcreationwizard.harx.ai/api/timezones
+COUNTRIES_API_URL=https://v25gigsmanualcreationbackend-production.up.railway.app/api/countries
+REP_URL=/api/timezones
 ```
 
 ## 🤖 Intelligence AI

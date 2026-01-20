@@ -19,14 +19,14 @@ const port = process.env.PORT || 5003;
 // CORS configuration
 const corsOptions = {
     origin: [
-        'https://v25.harx.ai',
-        'https://v25-preprod.harx.ai',
+        'https://harx25pageslinks.netlify.app',
+        'https://harx25pageslinks.netlify.app',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',
         'http://localhost:5179',
         'http://localhost:5183',
-        'https://copilot.harx.ai'
+        'https://harxv25copilotfrontend.netlify.app'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -46,14 +46,14 @@ const corsOptions = {
 // Middleware CORS manuel (backup)
 app.use((req, res, next) => {
     const allowedOrigins = [
-        'https://v25.harx.ai',
-        'https://v25-preprod.harx.ai',
+        'https://harx25pageslinks.netlify.app',
+        'https://harx25pageslinks.netlify.app',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',
         'http://localhost:5179',
         'http://localhost:5183',
-        'https://copilot.harx.ai'
+        'https://harxv25copilotfrontend.netlify.app'
     ];
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin)) {
@@ -76,12 +76,12 @@ app.use((0, cors_1.default)(corsOptions));
 // Connexion à MongoDB
 mongoose_1.default.connect(process.env.MONGO_URI)
     .then(() => {
-    console.log('Connected to MongoDB');
-})
+        console.log('Connected to MongoDB');
+    })
     .catch((error) => {
-    console.error('Error connecting to MongoDB:', error);
-    process.exit(1);
-});
+        console.error('Error connecting to MongoDB:', error);
+        process.exit(1);
+    });
 // Utilisation des routes pour les gig
 app.use('/api/gigs', gigRoute_1.default);
 // Utilisation des routes pour l'IA
