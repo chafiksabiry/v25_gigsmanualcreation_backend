@@ -546,8 +546,8 @@ JSON format:
     }
   },
   "commission": {
-    "commission_per_call": 0,
-    "bonusAmount": "100",
+    "commissionPerCall": 0,
+    "bonusAmount": 100,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
@@ -557,7 +557,7 @@ JSON format:
       "unit": "Transactions"
     },
     "transactionCommission": 50,
-    "additionalDetails": "Detailed compensation information..."
+    "additionalDetails": "Detailed compensation information including base rates, bonuses, and payment terms."
   },
   "team": {
     "size": 1,
@@ -697,9 +697,9 @@ JSON format:
           parsedResponse.commission.transactionCommission =
             typeof rawTransComm === 'string' ? (parseFloat(rawTransComm) || 0) : (rawTransComm || 0);
 
-          // bonusAmount must be a string
+          // bonusAmount must be a number
           const rawBonus = parsedResponse.commission.bonusAmount;
-          parsedResponse.commission.bonusAmount = String(rawBonus || "0");
+          parsedResponse.commission.bonusAmount = typeof rawBonus === 'string' ? (parseFloat(rawBonus) || 0) : (rawBonus || 0);
 
           // minimumVolume must ensure inner fields are strings where expected
           if (parsedResponse.commission.minimumVolume) {
