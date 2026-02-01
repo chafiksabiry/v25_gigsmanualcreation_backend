@@ -7,6 +7,7 @@ exports.GigService = void 0;
 const gigModel_1 = require("../models/gigModel");
 const mongoose_1 = __importDefault(require("mongoose"));
 // Import des modèles pour le populate
+require("../models/sectorModel");
 require("../models/activityModel");
 require("../models/industryModel");
 require("../models/languageModel");
@@ -36,6 +37,7 @@ class GigService {
     static async getAllGigs() {
         try {
             return await gigModel_1.Gig.find()
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -55,6 +57,7 @@ class GigService {
     static async getActiveGigs() {
         try {
             return await gigModel_1.Gig.find({ status: 'active' })
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -78,6 +81,7 @@ class GigService {
                 throw new Error("Invalid Gig ID format");
             }
             const gig = await gigModel_1.Gig.findById(id)
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -104,6 +108,7 @@ class GigService {
                 throw new Error("Invalid Gig ID format");
             }
             const gig = await gigModel_1.Gig.findById(id)
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -127,21 +132,29 @@ class GigService {
     }
     static async updateGig(id, updateData) {
         try {
+            console.log('🔍 SERVICE - updateGig called with ID:', id);
+            console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
             if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+                console.log('❌ SERVICE - Invalid Gig ID format:', id);
                 throw new Error("Invalid Gig ID format");
             }
+            console.log('🔍 SERVICE - Calling Gig.findByIdAndUpdate...');
             // Utiliser $set pour la mise à jour partielle
             const updatedGig = await gigModel_1.Gig.findByIdAndUpdate(id, { $set: updateData }, {
                 new: true,
                 runValidators: true
             });
             if (!updatedGig) {
+                console.log('❌ SERVICE - Gig not found with ID:', id);
                 throw new Error("Gig not found");
             }
+            console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
             return updatedGig;
         }
         catch (error) {
-            console.error("Error in updateGig:", error);
+            console.error("❌ SERVICE - Error in updateGig:", error);
+            console.error("❌ SERVICE - Error details:", error instanceof Error ? error.message : 'Unknown error');
+            console.error("❌ SERVICE - Error stack:", error instanceof Error ? error.stack : 'No stack trace');
             throw error;
         }
     }
@@ -201,6 +214,7 @@ class GigService {
                 throw new Error("Invalid User ID format");
             }
             const gigs = await gigModel_1.Gig.find({ userId })
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -224,6 +238,7 @@ class GigService {
                 throw new Error("Invalid Company ID format");
             }
             const gigs = await gigModel_1.Gig.find({ companyId })
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')
@@ -267,6 +282,7 @@ class GigService {
             const lastGig = await gigModel_1.Gig.findOne({ companyId })
                 .sort({ createdAt: -1 })
                 .limit(1)
+                .populate('sectors')
                 .populate('activities')
                 .populate('industries')
                 .populate('destination_zone')

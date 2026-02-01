@@ -107,27 +107,36 @@ class GigController {
         try {
             const id = req.params.id;
             const updateData = req.body;
+            console.log('🔍 BACKEND - Update gig request received');
+            console.log('🔍 BACKEND - Gig ID:', id);
+            console.log('🔍 BACKEND - Update data:', JSON.stringify(updateData, null, 2));
             if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
+                console.log('❌ BACKEND - Invalid Gig ID format:', id);
                 return res.status(400).json({ message: "Invalid Gig ID format", data: null });
             }
             // Valider que destination_zone est un ObjectId valide si fourni dans les données de mise à jour
             if (updateData.destination_zone && !mongoose_1.default.Types.ObjectId.isValid(updateData.destination_zone)) {
+                console.log('❌ BACKEND - Invalid destination_zone ObjectId:', updateData.destination_zone);
                 return res.status(400).json({
                     message: "destination_zone must be a valid MongoDB ObjectId",
                     data: null
                 });
             }
+            console.log('🔍 BACKEND - Calling GigService.updateGig...');
             const updatedGig = await gigService_1.GigService.updateGig(id, updateData);
             if (!updatedGig) {
+                console.log('❌ BACKEND - Gig not found:', id);
                 return res.status(404).json({ message: "Gig not found", data: null });
             }
+            console.log('✅ BACKEND - Gig updated successfully:', updatedGig._id);
             return res.status(200).json({
                 message: "Gig updated successfully",
                 data: updatedGig
             });
         }
         catch (error) {
-            console.error('Error in updateGig:', error);
+            console.error('❌ BACKEND - Error in updateGig:', error);
+            console.error('❌ BACKEND - Error stack:', error instanceof Error ? error.stack : 'No stack trace');
             return res.status(500).json({
                 message: "Failed to update gig",
                 data: null

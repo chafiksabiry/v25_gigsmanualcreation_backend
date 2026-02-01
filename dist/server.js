@@ -12,7 +12,9 @@ const gigRoute_1 = __importDefault(require("./route/gigRoute"));
 const aiRoute_1 = __importDefault(require("./route/aiRoute"));
 const countryRoute_1 = __importDefault(require("./route/countryRoute"));
 const currencyRoute_1 = __importDefault(require("./route/currencyRoute"));
+const sectorRoute_1 = __importDefault(require("./route/sectorRoute"));
 const bulkRoute_1 = __importDefault(require("./route/bulkRoute"));
+const phoneNumberRoute_1 = __importDefault(require("./route/phoneNumberRoute"));
 dotenv_1.default.config(); // Pour charger les variables d'environnement depuis un fichier .env
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5003;
@@ -20,13 +22,15 @@ const port = process.env.PORT || 5003;
 const corsOptions = {
     origin: [
         'https://harx25pageslinks.netlify.app',
-        'https://harx25pageslinks.netlify.app',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',
         'http://localhost:5179',
         'http://localhost:5183',
-        'https://harxv25copilotfrontend.netlify.app'
+        'https://harxv25copilotfrontend.netlify.app',
+        'http://localhost:5190',
+        'https://harxv25trainingplatformfrontend.netlify.app',
+        'https://v25.harx.ai'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -47,13 +51,15 @@ const corsOptions = {
 app.use((req, res, next) => {
     const allowedOrigins = [
         'https://harx25pageslinks.netlify.app',
-        'https://harx25pageslinks.netlify.app',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',
         'http://localhost:5179',
         'http://localhost:5183',
-        'https://harxv25copilotfrontend.netlify.app'
+        'https://harxv25copilotfrontend.netlify.app',
+        'http://localhost:5190',
+        'https://harxv25trainingplatformfrontend.netlify.app',
+        'https://v25.harx.ai'
     ];
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin)) {
@@ -90,8 +96,12 @@ app.use('/api/ai', aiRoute_1.default);
 app.use('/api/countries', countryRoute_1.default);
 // Utilisation des routes pour les devises
 app.use('/api/currencies', currencyRoute_1.default);
+// Utilisation des routes pour les secteurs
+app.use('/api/sectors', sectorRoute_1.default);
 // Utilisation des routes pour le traitement en bulk
 app.use('/api/bulk', bulkRoute_1.default);
+// Utilisation des routes pour les numéros de téléphone
+app.use('/api/phone-numbers', phoneNumberRoute_1.default);
 // Route de base
 app.get('/', (req, res) => {
     res.send('Hello, welcome to the Gig API');

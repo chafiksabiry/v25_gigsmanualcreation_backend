@@ -19,7 +19,6 @@ const port = process.env.PORT || 5003;
 const corsOptions = {
   origin: [
     'https://harx25pageslinks.netlify.app',
-    'https://harx25pageslinks.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
@@ -27,8 +26,8 @@ const corsOptions = {
     'http://localhost:5183',
     'https://harxv25copilotfrontend.netlify.app',
     "http://localhost:5190",
-    "https://harxv25trainingplatformfrontend.netlify.app"
-
+    "https://harxv25trainingplatformfrontend.netlify.app",
+    'https://v25.harx.ai'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -50,7 +49,6 @@ const corsOptions = {
 app.use((req, res, next) => {
   const allowedOrigins = [
     'https://harx25pageslinks.netlify.app',
-    'https://harx25pageslinks.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
@@ -58,7 +56,8 @@ app.use((req, res, next) => {
     'http://localhost:5183',
     'https://harxv25copilotfrontend.netlify.app',
     'http://localhost:5190',
-    'https://harxv25trainingplatformfrontend.netlify.app'
+    'https://harxv25trainingplatformfrontend.netlify.app',
+    'https://v25.harx.ai'
   ];
 
   const origin = req.headers.origin;

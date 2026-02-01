@@ -17,6 +17,7 @@ exports.GigSchema = new mongoose_1.Schema({
         ref: 'Country',
         required: false
     },
+    sectors: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Sector', required: false }],
     activities: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
