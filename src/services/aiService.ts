@@ -546,7 +546,7 @@ JSON format:
     }
   },
   "commission": {
-    "commissionPerCall": 0,
+    "commission_per_call": 0,
     "bonusAmount": 100,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
@@ -680,7 +680,7 @@ JSON format:
           }
           // Cas 2: L'IA a retourné une string (code ou ID)
           else if (currencyValue && typeof currencyValue === 'string') {
-            const currencyId = this.findCurrencyId(currencyValue, currenciesData);
+            const currencyId = this.findCurrencyId(currencyValue, currenciesData || []);
             parsedResponse.commission.currency = { $oid: currencyId };
           }
           // Cas 3: Pas de devise ou format invalide -> Default EUR object
@@ -700,6 +700,12 @@ JSON format:
           // bonusAmount must be a number
           const rawBonus = parsedResponse.commission.bonusAmount;
           parsedResponse.commission.bonusAmount = typeof rawBonus === 'string' ? (parseFloat(rawBonus) || 0) : (rawBonus || 0);
+
+          // commission_per_call must be a number (handling potential AI inconsistencies)
+          const rawCommPerCall = parsedResponse.commission.commission_per_call || parsedResponse.commission.commissionPerCall;
+          parsedResponse.commission.commission_per_call = typeof rawCommPerCall === 'string' ? (parseFloat(rawCommPerCall) || 0) : (rawCommPerCall || 0);
+          // Remove camelCase duplicate if present to ensure clean output
+          delete parsedResponse.commission.commissionPerCall;
 
           // minimumVolume must ensure inner fields are strings where expected
           if (parsedResponse.commission.minimumVolume) {

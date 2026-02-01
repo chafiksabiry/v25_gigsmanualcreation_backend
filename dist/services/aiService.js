@@ -322,7 +322,7 @@ class AIService {
         const softSkillNames = skillsData.soft.slice(0, 10).map(skill => skill.name); // Limiter à 10
         const professionalSkillNames = skillsData.professional.slice(0, 10).map(skill => skill.name); // Limiter à 10
         const technicalSkillNames = skillsData.technical.slice(0, 10).map(skill => skill.name); // Limiter à 10
-        const currencyNames = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}`) : []; // Seulement les codes
+        const currencyOptions = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}: ${currency._id}`).join(', ') : [];
         // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
         const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
         const sortedCountries = countriesData ? [...countriesData].sort((a, b) => {
@@ -343,6 +343,7 @@ class AIService {
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as input
 - For destination_zone, use ONLY MongoDB ObjectId from COUNTRIES list
+- For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
 - Detect country from language/currency/context
 - Use only options below:
 
@@ -370,18 +371,12 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
-CURRENCIES: ${currencyNames.join(', ')}
+CURRENCIES (use the ObjectId):
+${currencyOptions}
 
 RULES:
 - Same language as input
 - Match country to context/language
-- COMMISSION REQUIREMENTS (MANDATORY):
-  - structure: MUST be "Commission per Call"
-  - commission_per_call: NUMBER (e.g. 10)
-  - bonusAmount: STRING (e.g. "150")
-  - transactionCommission: NUMBER (e.g. 50)
-  - minimumVolume: MUST include amount (string), period (string), unit (string)
-  - currency: MUST be a MongoDB ObjectId from the provided list
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 
@@ -438,17 +433,17 @@ JSON format:
   },
   "commission": {
     "commission_per_call": 0,
-    "bonusAmount": "150",
+    "bonusAmount": 100,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
     "minimumVolume": {
-      "amount": "25",
+      "amount": "30",
       "period": "Monthly",
-      "unit": "Calls"
+      "unit": "Transactions"
     },
     "transactionCommission": 50,
-    "additionalDetails": "Detailed compensation information and performance bonuses (IN SAME LANGUAGE AS USER QUERY)"
+    "additionalDetails": "Detailed compensation information including base rates, bonuses, and payment terms."
   },
   "team": {
     "size": 1,
@@ -545,18 +540,18 @@ JSON format:
                         }));
                     }
                 }
+                // Valider et structurer la devise
                 // Valider et structurer la devise et les champs de commission
                 if (parsedResponse.commission) {
                     // 1. Currency validation
                     let currencyValue = parsedResponse.commission.currency;
-
                     // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
                     if (currencyValue && typeof currencyValue === 'object' && currencyValue.$oid) {
                         // On garde tel quel
                     }
                     // Cas 2: L'IA a retourné une string (code ou ID)
                     else if (currencyValue && typeof currencyValue === 'string') {
-                        const currencyId = this.findCurrencyId(currencyValue, currenciesData);
+                        const currencyId = this.findCurrencyId(currencyValue, currenciesData || []);
                         parsedResponse.commission.currency = { $oid: currencyId };
                     }
                     // Cas 3: Pas de devise ou format invalide -> Default EUR object
@@ -566,30 +561,32 @@ JSON format:
                             : "68cae8918f8bb2a31a09b79f";
                         parsedResponse.commission.currency = { $oid: defaultCurrencyId };
                     }
-
                     // 2. Strict type enforcement for other commission fields
                     // transactionCommission must be a number
                     const rawTransComm = parsedResponse.commission.transactionCommission;
                     parsedResponse.commission.transactionCommission =
                         typeof rawTransComm === 'string' ? (parseFloat(rawTransComm) || 0) : (rawTransComm || 0);
-
-                    // bonusAmount must be a string
+                    // bonusAmount must be a number
                     const rawBonus = parsedResponse.commission.bonusAmount;
-                    parsedResponse.commission.bonusAmount = String(rawBonus || "0");
-
+                    parsedResponse.commission.bonusAmount = typeof rawBonus === 'string' ? (parseFloat(rawBonus) || 0) : (rawBonus || 0);
+                    // commission_per_call must be a number (handling potential AI inconsistencies)
+                    const rawCommPerCall = parsedResponse.commission.commission_per_call || parsedResponse.commission.commissionPerCall;
+                    parsedResponse.commission.commission_per_call = typeof rawCommPerCall === 'string' ? (parseFloat(rawCommPerCall) || 0) : (rawCommPerCall || 0);
+                    // Remove camelCase duplicate if present to ensure clean output
+                    delete parsedResponse.commission.commissionPerCall;
                     // minimumVolume must ensure inner fields are strings where expected
                     if (parsedResponse.commission.minimumVolume) {
                         parsedResponse.commission.minimumVolume.amount = String(parsedResponse.commission.minimumVolume.amount || "0");
                         parsedResponse.commission.minimumVolume.unit = parsedResponse.commission.minimumVolume.unit || "Calls";
                         parsedResponse.commission.minimumVolume.period = parsedResponse.commission.minimumVolume.period || "Monthly";
-                    } else {
+                    }
+                    else {
                         parsedResponse.commission.minimumVolume = {
                             amount: "0",
                             period: "Monthly",
                             unit: "Calls"
                         };
                     }
-
                     // additionalDetails must be string
                     parsedResponse.commission.additionalDetails = parsedResponse.commission.additionalDetails || "";
                 }
@@ -611,11 +608,10 @@ JSON format:
                     if (parsedResponse.commission) {
                         const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
                         if (currenciesData && currenciesData.length > 0) {
-                            parsedResponse.commission.currency = { $oid: this.findCurrencyId(currencyCode, currenciesData) };
+                            parsedResponse.commission.currency = this.findCurrencyId(currencyCode, currenciesData);
                         }
                         else {
-                            // Fallback if currenciesData is empty or currency not found, just use the code as a string
-                            parsedResponse.commission.currency = { $oid: currencyCode };
+                            parsedResponse.commission.currency = currencyCode;
                         }
                     }
                 }
