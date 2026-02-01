@@ -14,7 +14,6 @@ const countryRoute_1 = __importDefault(require("./route/countryRoute"));
 const currencyRoute_1 = __importDefault(require("./route/currencyRoute"));
 const sectorRoute_1 = __importDefault(require("./route/sectorRoute"));
 const bulkRoute_1 = __importDefault(require("./route/bulkRoute"));
-const phoneNumberRoute_1 = __importDefault(require("./route/phoneNumberRoute"));
 dotenv_1.default.config(); // Pour charger les variables d'environnement depuis un fichier .env
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5003;
@@ -28,8 +27,8 @@ const corsOptions = {
         'http://localhost:5179',
         'http://localhost:5183',
         'https://harxv25copilotfrontend.netlify.app',
-        'http://localhost:5190',
-        'https://harxv25trainingplatformfrontend.netlify.app',
+        "http://localhost:5190",
+        "https://harxv25trainingplatformfrontend.netlify.app",
         'https://v25.harx.ai'
     ],
     credentials: true,
@@ -82,12 +81,12 @@ app.use((0, cors_1.default)(corsOptions));
 // Connexion à MongoDB
 mongoose_1.default.connect(process.env.MONGO_URI)
     .then(() => {
-        console.log('Connected to MongoDB');
-    })
+    console.log('Connected to MongoDB');
+})
     .catch((error) => {
-        console.error('Error connecting to MongoDB:', error);
-        process.exit(1);
-    });
+    console.error('Error connecting to MongoDB:', error);
+    process.exit(1);
+});
 // Utilisation des routes pour les gig
 app.use('/api/gigs', gigRoute_1.default);
 // Utilisation des routes pour l'IA
@@ -100,8 +99,6 @@ app.use('/api/currencies', currencyRoute_1.default);
 app.use('/api/sectors', sectorRoute_1.default);
 // Utilisation des routes pour le traitement en bulk
 app.use('/api/bulk', bulkRoute_1.default);
-// Utilisation des routes pour les numéros de téléphone
-app.use('/api/phone-numbers', phoneNumberRoute_1.default);
 // Route de base
 app.get('/', (req, res) => {
     res.send('Hello, welcome to the Gig API');

@@ -71,7 +71,7 @@ async function fetchCurrencies() {
         const data = await response.json();
         if (data.success && data.data) {
             console.log(`✅ ${data.data.length} currencies fetched successfully`);
-            return data.data.filter(currency => currency.isActive);
+            return data.data.filter((currency) => currency.isActive);
         }
         else {
             console.error('Error in currencies API response:', data);
@@ -594,7 +594,7 @@ class AIController {
             const testResults = activities.map((activityName) => {
                 // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
                 // Recherche exacte d'abord
-                let activity = activitiesData.find(a => a.name.toLowerCase() === activityName.toLowerCase());
+                let activity = activitiesData.find((a) => a.name.toLowerCase() === activityName.toLowerCase());
                 let matchType = 'exact';
                 let foundId = '';
                 if (activity) {
@@ -603,7 +603,7 @@ class AIController {
                 else {
                     // Recherche approximative
                     const normalizedSearchName = activityName.toLowerCase().trim();
-                    activity = activitiesData.find(a => {
+                    activity = activitiesData.find((a) => {
                         const normalizedActivityName = a.name.toLowerCase().trim();
                         return normalizedActivityName.includes(normalizedSearchName) ||
                             normalizedSearchName.includes(normalizedActivityName);
@@ -627,7 +627,7 @@ class AIController {
                         };
                         const mappedName = manualMappings[normalizedSearchName];
                         if (mappedName) {
-                            activity = activitiesData.find(a => a.name.toLowerCase() === mappedName.toLowerCase());
+                            activity = activitiesData.find((a) => a.name.toLowerCase() === mappedName.toLowerCase());
                             if (activity) {
                                 foundId = activity._id;
                                 matchType = 'manual_mapping';
@@ -655,16 +655,16 @@ class AIController {
                 results: testResults,
                 summary: {
                     total: testResults.length,
-                    successful: testResults.filter(r => r.success).length,
-                    failed: testResults.filter(r => !r.success).length,
+                    successful: testResults.filter((r) => r.success).length,
+                    failed: testResults.filter((r) => !r.success).length,
                     matchTypes: {
-                        exact: testResults.filter(r => r.matchType === 'exact').length,
-                        partial: testResults.filter(r => r.matchType === 'partial').length,
-                        manual_mapping: testResults.filter(r => r.matchType === 'manual_mapping').length,
-                        default_fallback: testResults.filter(r => r.matchType === 'default_fallback').length
+                        exact: testResults.filter((r) => r.matchType === 'exact').length,
+                        partial: testResults.filter((r) => r.matchType === 'partial').length,
+                        manual_mapping: testResults.filter((r) => r.matchType === 'manual_mapping').length,
+                        default_fallback: testResults.filter((r) => r.matchType === 'default_fallback').length
                     }
                 },
-                availableActivities: activitiesData.map(a => ({ id: a._id, name: a.name }))
+                availableActivities: activitiesData.map((a) => ({ id: a._id, name: a.name }))
             });
         }
         catch (error) {

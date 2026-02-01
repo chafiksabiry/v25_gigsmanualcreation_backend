@@ -63,21 +63,15 @@ exports.GigSchema = new mongoose_1.Schema({
         }
     },
     commission: {
-        base: { type: String, required: false },
-        baseAmount: { type: String, required: false },
-        bonus: String,
-        bonusAmount: String,
-        structure: String,
+        commission_per_call: { type: Number, required: false },
+        bonusAmount: { type: String, required: false },
         currency: { type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Currency', required: false },
         minimumVolume: {
             amount: { type: String, required: false },
             period: { type: String, required: false },
             unit: { type: String, required: false },
         },
-        transactionCommission: {
-            type: { type: String, required: false },
-            amount: { type: String, required: false },
-        },
+        transactionCommission: { type: Number, required: false },
         additionalDetails: { type: String, required: false },
     },
     leads: {

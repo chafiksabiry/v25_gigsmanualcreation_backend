@@ -1,4 +1,3 @@
-import { ok } from 'node:assert';
 import OpenAI from 'openai';
 
 // Configuration sécurisée d'OpenAI côté backend - initialisation conditionnelle
@@ -197,11 +196,9 @@ export class AIService {
       }
     }
 
-
     console.log('🔍 AUCUN PAYS DÉTECTÉ dans la description');
     return '';
   }
-
 
   /**
    * Trouve un ID de pays basé sur le nom du pays (similaire à findTimezoneId)
@@ -492,7 +489,7 @@ CURRENCIES: ${currencyNames.join(', ')}
 RULES:
 - Same language as input
 - Match country to context/language
-- Commission: commission_per_call (number), transactionCommission (number), bonusAmount (string in quotes)
+- Commission: base="Base + Commission", bonus="Performance Bonus"
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 
@@ -548,15 +545,21 @@ JSON format:
     }
   },
   "commission": {
-    "commission_per_call": 0,
-    "bonusAmount": "150",
+    "base": "Base + Commission",
+    "baseAmount": 0,
+    "bonus": "Performance Bonus",
+    "bonusAmount": 150,
+    "structure": "",
     "currency": "EUR",
     "minimumVolume": {
-      "amount": "30",
+      "amount": 25,
       "period": "Monthly",
-      "unit": "Transactions"
+      "unit": "Calls"
     },
-    "transactionCommission": 50,
+    "transactionCommission": {
+      "type": "Fixed Amount",
+      "amount": 50
+    },
     "additionalDetails": "Detailed compensation information and performance bonuses (IN SAME LANGUAGE AS USER QUERY)"
   },
   "team": {
@@ -960,12 +963,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une compétence par son nom
    */
-  private static findSkillId(skillName: string, skillsList: any[]): string {
+  static findSkillId(skillName: string, skillsList: any[]): string {
     // Exact match first
-    let skill = skillsList.find(s =>
-      s.name.toLowerCase() === skillName.toLowerCase()
-    );
-
+    let skill = skillsList.find(s => s.name.toLowerCase() === skillName.toLowerCase());
     if (skill) {
       return skill._id;
     }
@@ -975,7 +975,6 @@ Example response format: ["US", "CA", "UK", "DE"]`;
       s.name.toLowerCase().includes(skillName.toLowerCase()) ||
       skillName.toLowerCase().includes(s.name.toLowerCase())
     );
-
     if (skill) {
       console.log(`⚠️  Partial skill match found: "${skillName}" -> "${skill.name}" (${skill._id})`);
       return skill._id;
@@ -993,11 +992,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
           .replace(/\b(support|management|system|software|platform|tool|service|application|technology)\b/g, '')
           .replace(/\s+/g, ' ')
           .trim();
-
         return normalizedSkillName.includes(normalizedSearchName) ||
           normalizedSearchName.includes(normalizedSkillName);
       });
-
       if (skill) {
         console.log(`⚠️  Fuzzy skill match found: "${skillName}" -> "${skill.name}" (${skill._id})`);
         return skill._id;
@@ -1021,12 +1018,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une activité par son nom avec correspondance approximative
    */
-  private static findActivityId(activityName: string, activitiesList: any[]): string {
+  static findActivityId(activityName: string, activitiesList: any[]): string {
     // Recherche exacte d'abord
-    let activity = activitiesList.find(a =>
-      a.name.toLowerCase() === activityName.toLowerCase()
-    );
-
+    let activity = activitiesList.find(a => a.name.toLowerCase() === activityName.toLowerCase());
     if (activity) {
       return activity._id;
     }
@@ -1061,9 +1055,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     const mappedName = manualMappings[normalizedSearchName];
     if (mappedName) {
-      activity = activitiesList.find(a =>
-        a.name.toLowerCase() === mappedName.toLowerCase()
-      );
+      activity = activitiesList.find(a => a.name.toLowerCase() === mappedName.toLowerCase());
       if (activity) {
         console.log(`🔄 Mapping manuel trouvé: "${activityName}" → "${activity.name}" (${activity._id})`);
         return activity._id;
@@ -1086,12 +1078,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une industrie par son nom avec correspondance approximative
    */
-  private static findIndustryId(industryName: string, industriesList: any[]): string {
+  static findIndustryId(industryName: string, industriesList: any[]): string {
     // Recherche exacte d'abord
-    let industry = industriesList.find(i =>
-      i.name.toLowerCase() === industryName.toLowerCase()
-    );
-
+    let industry = industriesList.find(i => i.name.toLowerCase() === industryName.toLowerCase());
     if (industry) {
       return industry._id;
     }
@@ -1126,9 +1115,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     const mappedName = manualMappings[normalizedSearchName];
     if (mappedName) {
-      industry = industriesList.find(i =>
-        i.name.toLowerCase() === mappedName.toLowerCase()
-      );
+      industry = industriesList.find(i => i.name.toLowerCase() === mappedName.toLowerCase());
       if (industry) {
         console.log(`🔄 Mapping manuel trouvé pour industrie: "${industryName}" → "${industry.name}" (${industry._id})`);
         return industry._id;
@@ -1150,17 +1137,14 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une devise par son code
    */
-  private static findCurrencyId(currencyCode: string, currenciesList: any[]): string {
+  static findCurrencyId(currencyCode: string, currenciesList: any[]): string {
     if (!currenciesList || currenciesList.length === 0) {
       console.warn(`⚠️  Aucune devise disponible pour "${currencyCode}"`);
       return currencyCode; // Retourner le code tel quel si pas de données
     }
 
     // Recherche exacte par code
-    const currency = currenciesList.find(c =>
-      c.code && c.code.toUpperCase() === currencyCode.toUpperCase()
-    );
-
+    const currency = currenciesList.find(c => c.code && c.code.toUpperCase() === currencyCode.toUpperCase());
     if (currency) {
       console.log(`✅ Devise trouvée: ${currencyCode} → ${currency.name} (${currency._id})`);
       return currency._id;
@@ -1181,18 +1165,17 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une langue par son nom
    */
-  private static findLanguageId(languageName: string, languagesList: any[]): string {
-    const language = languagesList.find(l =>
-      l.name.toLowerCase() === languageName.toLowerCase()
-    );
+  static findLanguageId(languageName: string, languagesList: any[]): string {
+    const language = languagesList.find(l => l.name.toLowerCase() === languageName.toLowerCase());
     return language ? language._id : languageName;
   }
 
   /**
    * Trouve l'ID d'un territoire/pays par son nom
    */
-  private static findTerritoryId(territoryName: string, countriesList: any[]): string {
+  static findTerritoryId(territoryName: string, countriesList: any[]): string {
     console.log(`🔍 RECHERCHE TERRITORY: "${territoryName}" dans ${countriesList?.length || 0} pays`);
+
     if (!countriesList || countriesList.length === 0) {
       console.log(`❌ COUNTRIES LIST vide ou undefined`);
       return territoryName;
@@ -1202,28 +1185,24 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     let territory = countriesList.find(country =>
       country.name?.common?.toLowerCase() === territoryName.toLowerCase()
     );
-
     if (territory) return territory._id;
 
     // Recherche par nom officiel
     territory = countriesList.find(country =>
       country.name?.official?.toLowerCase() === territoryName.toLowerCase()
     );
-
     if (territory) return territory._id;
 
     // Recherche partielle par nom de pays (common)
     territory = countriesList.find(country =>
       country.name?.common?.toLowerCase().includes(territoryName.toLowerCase())
     );
-
     if (territory) return territory._id;
 
     // Recherche partielle par nom officiel
     territory = countriesList.find(country =>
       country.name?.official?.toLowerCase().includes(territoryName.toLowerCase())
     );
-
     if (territory) return territory._id;
 
     // Mapping des noms de pays courants
@@ -1290,14 +1269,11 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   /**
    * Trouve l'ID d'une timezone par son nom avec contexte intelligent
    */
-  private static findTimezoneId(timezoneName: string, timezonesList: any[], context?: string): string {
+  static findTimezoneId(timezoneName: string, timezonesList: any[], context?: string): string {
     if (!timezonesList || timezonesList.length === 0) return timezoneName;
 
     // Recherche exacte par zoneName
-    let timezone = timezonesList.find(tz =>
-      tz.zoneName === timezoneName
-    );
-
+    let timezone = timezonesList.find(tz => tz.zoneName === timezoneName);
     if (timezone) return timezone._id;
 
     // Analyse contextuelle pour déterminer la région probable
@@ -1309,7 +1285,6 @@ Example response format: ["US", "CA", "UK", "DE"]`;
       tz.countryName?.toLowerCase().includes(timezoneName.toLowerCase()) ||
       tz.zoneName?.toLowerCase().includes(timezoneName.toLowerCase())
     );
-
     if (timezone) return timezone._id;
 
     // Mapping des timezones communes
@@ -1330,7 +1305,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     }
 
     // Fallback intelligent basé sur le contexte
-    timezone = timezonesList.find(tz => tz.zoneName === 'Europe/Paris') ||  // France par défaut
+    timezone = timezonesList.find(tz => tz.zoneName === 'Europe/Paris') || // France par défaut
       timezonesList.find(tz => tz.zoneName === 'UTC') ||
       timezonesList.find(tz => tz.zoneName.includes('UTC')) ||
       timezonesList[0];
@@ -1360,7 +1335,6 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         // Chercher le début et la fin du JSON
         const jsonStart = content.indexOf('{');
         const jsonEnd = content.lastIndexOf('}') + 1;
-
         if (jsonStart !== -1 && jsonEnd > jsonStart) {
           jsonContent = content.substring(jsonStart, jsonEnd);
           console.log('Extracted JSON from position', jsonStart, 'to', jsonEnd);

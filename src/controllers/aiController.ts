@@ -1,64 +1,17 @@
 import { Request, Response } from 'express';
 import { Country } from '../models/countryModel';
-import { AIService, TimezoneGenerationRequest } from '../services/aiService';
+import { AIService } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 
 // Configuration de l'API externe
 const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://v25gigsmanualcreationbackend-production.up.railway.app/api/currencies';
 
-// Types pour les réponses de l'API externe
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  message?: string;
-}
-
-interface Activity {
-  _id: string;
-  name: string;
-  description: string;
-  category: string;
-  isActive: boolean;
-}
-
-interface Industry {
-  _id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-}
-
-interface Language {
-  _id: string;
-  name: string;
-  code: string;
-  nativeName: string;
-}
-
-interface Skill {
-  _id: string;
-  name: string;
-  description: string;
-  category: string;
-  isActive: boolean;
-}
-
-interface Currency {
-  _id: string;
-  code: string;
-  name: string;
-  symbol: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 // Fonctions pour récupérer les données depuis l'API externe
-async function fetchActivities(): Promise<Activity[]> {
+async function fetchActivities() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/activities`);
-    const data = await response.json() as ApiResponse<Activity[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching activities:', error);
@@ -66,10 +19,10 @@ async function fetchActivities(): Promise<Activity[]> {
   }
 }
 
-async function fetchIndustries(): Promise<Industry[]> {
+async function fetchIndustries() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/industries`);
-    const data = await response.json() as ApiResponse<Industry[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching industries:', error);
@@ -77,10 +30,10 @@ async function fetchIndustries(): Promise<Industry[]> {
   }
 }
 
-async function fetchLanguages(): Promise<Language[]> {
+async function fetchLanguages() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/languages`);
-    const data = await response.json() as ApiResponse<Language[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching languages:', error);
@@ -88,7 +41,7 @@ async function fetchLanguages(): Promise<Language[]> {
   }
 }
 
-async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; technical: Skill[] }> {
+async function fetchSkills() {
   try {
     const [softResponse, professionalResponse, technicalResponse] = await Promise.all([
       fetch(`${EXTERNAL_API_BASE}/skills/soft`),
@@ -97,9 +50,9 @@ async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; te
     ]);
 
     const [softData, professionalData, technicalData] = await Promise.all([
-      softResponse.json() as Promise<ApiResponse<Skill[]>>,
-      professionalResponse.json() as Promise<ApiResponse<Skill[]>>,
-      technicalResponse.json() as Promise<ApiResponse<Skill[]>>
+      softResponse.json() as Promise<any>,
+      professionalResponse.json() as Promise<any>,
+      technicalResponse.json() as Promise<any>
     ]);
 
     return {
@@ -113,15 +66,15 @@ async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; te
   }
 }
 
-async function fetchCurrencies(): Promise<Currency[]> {
+async function fetchCurrencies() {
   try {
     console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
     const response = await fetch(CURRENCIES_API_URL);
-    const data = await response.json() as ApiResponse<Currency[]>;
+    const data = await response.json() as any;
 
     if (data.success && data.data) {
       console.log(`✅ ${data.data.length} currencies fetched successfully`);
-      return data.data.filter(currency => currency.isActive);
+      return data.data.filter((currency: any) => currency.isActive);
     } else {
       console.error('Error in currencies API response:', data);
       return [];
@@ -132,18 +85,10 @@ async function fetchCurrencies(): Promise<Currency[]> {
   }
 }
 
-interface Timezone {
-  _id: string;
-  countryCode: string;
-  countryName: string;
-  zoneName: string;
-  gmtOffset: number;
-}
-
-async function fetchTimezones(): Promise<Timezone[]> {
+async function fetchTimezones() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/timezones`);
-    const data = await response.json() as ApiResponse<Timezone[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching timezones:', error);
@@ -152,12 +97,13 @@ async function fetchTimezones(): Promise<Timezone[]> {
 }
 
 // Fonction pour récupérer les pays depuis l'API externe
-async function fetchCountries(): Promise<any[]> {
+async function fetchCountries() {
   try {
     const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
     console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
+
     const response = await fetch(countriesApiUrl);
-    const data = await response.json() as ApiResponse<any[]>;
+    const data = await response.json() as any;
 
     if (data.success && data.data) {
       console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
@@ -181,6 +127,7 @@ async function fetchCountries(): Promise<any[]> {
 }
 
 export class AIController {
+
   /**
    * Génère des suggestions de gig complètes basées sur une description
    */
@@ -267,7 +214,7 @@ export class AIController {
    */
   static async generateTimezones(req: Request, res: Response) {
     try {
-      const request: TimezoneGenerationRequest = req.body;
+      const request = req.body;
 
       if (!request.targetMarkets || request.targetMarkets.length === 0) {
         return res.status(400).json({
@@ -300,11 +247,7 @@ export class AIController {
         });
       }
 
-      const destinations = await AIService.generateDestinations(
-        title,
-        description || '',
-        category || ''
-      );
+      const destinations = await AIService.generateDestinations(title, description || '', category || '');
 
       res.status(200).json(destinations);
     } catch (error: any) {
@@ -397,31 +340,31 @@ export class AIController {
         jobTitles: [`${category} Specialist`, `${category} Agent`, `${category} Representative`],
         jobDescription: `Test description based on: ${description}`,
         category: category,
-        destination_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id ||
-          timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
-        activities: activitiesData.slice(0, 3).map((activity: Activity) => activity._id),
-        industries: industriesData.slice(0, 2).map((industry: Industry) => industry._id),
+        destination_zone: timezonesData.find((tz: any) => tz.zoneName === "Europe/Paris")?._id ||
+          timezonesData.find((tz: any) => tz.zoneName === "UTC")?._id || "UTC",
+        activities: activitiesData.slice(0, 3).map((activity: any) => activity._id),
+        industries: industriesData.slice(0, 2).map((industry: any) => industry._id),
         seniority: {
           level: "Mid-Level",
           yearsExperience: 2
         },
         skills: {
-          languages: languagesData.slice(0, 2).map((lang: Language) => ({
+          languages: languagesData.slice(0, 2).map((lang: any) => ({
             language: lang._id,
-            proficiency: "B2" as const,
+            proficiency: "B2",
             iso639_1: lang.code || 'en'
           })),
-          soft: skillsData.soft.slice(0, 3).map((skill: Skill) => ({
+          soft: skillsData.soft.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
           })),
-          professional: skillsData.professional.slice(0, 3).map((skill: Skill) => ({
+          professional: skillsData.professional.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
           })),
-          technical: skillsData.technical.slice(0, 3).map((skill: Skill) => ({
+          technical: skillsData.technical.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
@@ -450,8 +393,8 @@ export class AIController {
               hours: { start: "09:00", end: "17:00" }
             }
           ],
-          time_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id ||
-            timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
+          time_zone: timezonesData.find((tz: any) => tz.zoneName === "Europe/Paris")?._id ||
+            timezonesData.find((tz: any) => tz.zoneName === "UTC")?._id || "UTC",
           flexibility: ["Flexible Hours", "Remote Work Available"],
           minimumHours: {
             daily: 4,
@@ -460,15 +403,21 @@ export class AIController {
           }
         },
         commission: {
-          commission_per_call: 0,
-          bonusAmount: "150",
-          currency: "68cae8918f8bb2a31a09b79f", // Default EUR ID or valid ID
+          base: "Base + Commission",
+          baseAmount: 0,
+          bonus: "Performance Bonus",
+          bonusAmount: 150,
+          structure: "",
+          currency: "EUR",
           minimumVolume: {
-            amount: "25",
+            amount: 25,
             period: "Monthly",
             unit: "Calls"
           },
-          transactionCommission: 50,
+          transactionCommission: {
+            type: "Fixed Amount",
+            amount: 50
+          },
           additionalDetails: "Commission structure based on performance metrics and call quality. Additional bonuses available for exceeding monthly targets."
         },
         team: {
@@ -702,11 +651,9 @@ export class AIController {
       // Tester la conversion
       const testResults = activities.map((activityName: string) => {
         // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
-        // Recherche exacte d'abord
-        let activity = activitiesData.find(a =>
-          a.name.toLowerCase() === activityName.toLowerCase()
-        );
 
+        // Recherche exacte d'abord
+        let activity = activitiesData.find((a: any) => a.name.toLowerCase() === activityName.toLowerCase());
         let matchType = 'exact';
         let foundId = '';
 
@@ -716,7 +663,7 @@ export class AIController {
           // Recherche approximative
           const normalizedSearchName = activityName.toLowerCase().trim();
 
-          activity = activitiesData.find(a => {
+          activity = activitiesData.find((a: any) => {
             const normalizedActivityName = a.name.toLowerCase().trim();
             return normalizedActivityName.includes(normalizedSearchName) ||
               normalizedSearchName.includes(normalizedActivityName);
@@ -741,9 +688,7 @@ export class AIController {
 
             const mappedName = manualMappings[normalizedSearchName];
             if (mappedName) {
-              activity = activitiesData.find(a =>
-                a.name.toLowerCase() === mappedName.toLowerCase()
-              );
+              activity = activitiesData.find((a: any) => a.name.toLowerCase() === mappedName.toLowerCase());
               if (activity) {
                 foundId = activity._id;
                 matchType = 'manual_mapping';
@@ -774,16 +719,16 @@ export class AIController {
         results: testResults,
         summary: {
           total: testResults.length,
-          successful: testResults.filter(r => r.success).length,
-          failed: testResults.filter(r => !r.success).length,
+          successful: testResults.filter((r: any) => r.success).length,
+          failed: testResults.filter((r: any) => !r.success).length,
           matchTypes: {
-            exact: testResults.filter(r => r.matchType === 'exact').length,
-            partial: testResults.filter(r => r.matchType === 'partial').length,
-            manual_mapping: testResults.filter(r => r.matchType === 'manual_mapping').length,
-            default_fallback: testResults.filter(r => r.matchType === 'default_fallback').length
+            exact: testResults.filter((r: any) => r.matchType === 'exact').length,
+            partial: testResults.filter((r: any) => r.matchType === 'partial').length,
+            manual_mapping: testResults.filter((r: any) => r.matchType === 'manual_mapping').length,
+            default_fallback: testResults.filter((r: any) => r.matchType === 'default_fallback').length
           }
         },
-        availableActivities: activitiesData.map(a => ({ id: a._id, name: a.name }))
+        availableActivities: activitiesData.map((a: any) => ({ id: a._id, name: a.name }))
       });
     } catch (error: any) {
       console.error('Error testing activity mapping:', error);
@@ -793,4 +738,5 @@ export class AIController {
       });
     }
   }
+
 }
