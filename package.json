@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "nodemon --exec npx ts-node src/server.ts",
-    "build": "npx tsc"
+    "build": "node node_modules/typescript/bin/tsc"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",
