@@ -84,7 +84,9 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors(corsOptions));
 
 // Connexion à MongoDB
-mongoose.connect(process.env.MONGO_URI as string)
+const mongoUri = process.env.MONGO_URI || 'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
+
+mongoose.connect(mongoUri)
   .then(() => {
     console.log('Connected to MongoDB');
   })
