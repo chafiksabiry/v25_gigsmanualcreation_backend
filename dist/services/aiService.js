@@ -375,7 +375,13 @@ CURRENCIES: ${currencyNames.join(', ')}
 RULES:
 - Same language as input
 - Match country to context/language
-- Commission: structure="Commission per Call", commission_per_call (number), bonusAmount (string)
+- COMMISSION REQUIREMENTS (MANDATORY):
+  - structure: MUST be "Commission per Call"
+  - commission_per_call: NUMBER (e.g. 10)
+  - bonusAmount: STRING (e.g. "150")
+  - transactionCommission: NUMBER (e.g. 50)
+  - minimumVolume: MUST include amount (string), period (string), unit (string)
+  - currency: MUST be a MongoDB ObjectId from the provided list
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 
