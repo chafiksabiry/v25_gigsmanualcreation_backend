@@ -434,7 +434,7 @@ export class AIService {
     const softSkillNames = skillsData.soft.slice(0, 10).map(skill => skill.name); // Limiter à 10
     const professionalSkillNames = skillsData.professional.slice(0, 10).map(skill => skill.name); // Limiter à 10
     const technicalSkillNames = skillsData.technical.slice(0, 10).map(skill => skill.name); // Limiter à 10
-    const currencyNames = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}`) : []; // Seulement les codes
+    const currencyOptions = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}: ${currency._id}`).join(', ') : [];
 
     // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
     const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
@@ -457,6 +457,7 @@ export class AIService {
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as input
 - For destination_zone, use ONLY MongoDB ObjectId from COUNTRIES list
+- For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
 - Detect country from language/currency/context
 - Use only options below:
 
@@ -484,12 +485,12 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
-CURRENCIES: ${currencyNames.join(', ')}
+CURRENCIES (use the ObjectId):
+${currencyOptions}
 
 RULES:
 - Same language as input
 - Match country to context/language
-- Commission: base="Base + Commission", bonus="Performance Bonus"
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 
@@ -545,22 +546,18 @@ JSON format:
     }
   },
   "commission": {
-    "base": "Base + Commission",
-    "baseAmount": 0,
-    "bonus": "Performance Bonus",
-    "bonusAmount": 150,
-    "structure": "",
-    "currency": "EUR",
+    "commission_per_call": 0,
+    "bonusAmount": "100",
+    "currency": {
+      "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
+    },
     "minimumVolume": {
-      "amount": 25,
+      "amount": "30",
       "period": "Monthly",
-      "unit": "Calls"
+      "unit": "Transactions"
     },
-    "transactionCommission": {
-      "type": "Fixed Amount",
-      "amount": 50
-    },
-    "additionalDetails": "Detailed compensation information and performance bonuses (IN SAME LANGUAGE AS USER QUERY)"
+    "transactionCommission": 50,
+    "additionalDetails": "Detailed compensation information..."
   },
   "team": {
     "size": 1,
@@ -671,12 +668,54 @@ JSON format:
           }
         }
 
-        // Convertir la devise en ID si l'IA en a suggéré une
-        if (parsedResponse.commission?.currency && currenciesData && currenciesData.length > 0) {
-          const originalCurrency = parsedResponse.commission.currency;
-          const currencyId = this.findCurrencyId(originalCurrency, currenciesData);
-          parsedResponse.commission.currency = currencyId;
-          console.log(`💰 Conversion devise: "${originalCurrency}" → ${currencyId}`);
+        // Valider et structurer la devise
+        // Valider et structurer la devise et les champs de commission
+        if (parsedResponse.commission) {
+          // 1. Currency validation
+          let currencyValue = parsedResponse.commission.currency;
+
+          // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
+          if (currencyValue && typeof currencyValue === 'object' && currencyValue.$oid) {
+            // On garde tel quel
+          }
+          // Cas 2: L'IA a retourné une string (code ou ID)
+          else if (currencyValue && typeof currencyValue === 'string') {
+            const currencyId = this.findCurrencyId(currencyValue, currenciesData);
+            parsedResponse.commission.currency = { $oid: currencyId };
+          }
+          // Cas 3: Pas de devise ou format invalide -> Default EUR object
+          else {
+            const defaultCurrencyId = currenciesData && currenciesData.length > 0
+              ? this.findCurrencyId('EUR', currenciesData)
+              : "68cae8918f8bb2a31a09b79f";
+            parsedResponse.commission.currency = { $oid: defaultCurrencyId };
+          }
+
+          // 2. Strict type enforcement for other commission fields
+          // transactionCommission must be a number
+          const rawTransComm = parsedResponse.commission.transactionCommission;
+          parsedResponse.commission.transactionCommission =
+            typeof rawTransComm === 'string' ? (parseFloat(rawTransComm) || 0) : (rawTransComm || 0);
+
+          // bonusAmount must be a string
+          const rawBonus = parsedResponse.commission.bonusAmount;
+          parsedResponse.commission.bonusAmount = String(rawBonus || "0");
+
+          // minimumVolume must ensure inner fields are strings where expected
+          if (parsedResponse.commission.minimumVolume) {
+            parsedResponse.commission.minimumVolume.amount = String(parsedResponse.commission.minimumVolume.amount || "0");
+            parsedResponse.commission.minimumVolume.unit = parsedResponse.commission.minimumVolume.unit || "Calls";
+            parsedResponse.commission.minimumVolume.period = parsedResponse.commission.minimumVolume.period || "Monthly";
+          } else {
+            parsedResponse.commission.minimumVolume = {
+              amount: "0",
+              period: "Monthly",
+              unit: "Calls"
+            };
+          }
+
+          // additionalDetails must be string
+          parsedResponse.commission.additionalDetails = parsedResponse.commission.additionalDetails || "";
         }
 
         // Convertir les timezones en IDs avec contexte intelligent

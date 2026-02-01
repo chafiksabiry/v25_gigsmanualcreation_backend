@@ -403,21 +403,17 @@ export class AIController {
           }
         },
         commission: {
-          base: "Base + Commission",
-          baseAmount: 0,
-          bonus: "Performance Bonus",
-          bonusAmount: 150,
-          structure: "",
-          currency: "EUR",
+          commission_per_call: 0,
+          bonusAmount: "150",
+          currency: {
+            $oid: "68cae8918f8bb2a31a09b79f" // Default EUR ID
+          },
           minimumVolume: {
-            amount: 25,
+            amount: "25",
             period: "Monthly",
             unit: "Calls"
           },
-          transactionCommission: {
-            type: "Fixed Amount",
-            amount: 50
-          },
+          transactionCommission: 50, // Number
           additionalDetails: "Commission structure based on performance metrics and call quality. Additional bonuses available for exceeding monthly targets."
         },
         team: {
