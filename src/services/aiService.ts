@@ -493,6 +493,8 @@ RULES:
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
+- minimumVolume is a QUANTITY (e.g. number of calls). EXTRACT the exact number from text if stated (e.g. "17 calls or more" -> amount: "17"). Defaults to "30" ONLY if not specified.
+- If a bonus is mentioned for a specific volume (e.g. "bonus if > 17 calls"), set minimumVolume.amount to that number ("17") and put the bonus amount in bonusAmount.
 
 JSON format:
 {
@@ -545,16 +547,16 @@ JSON format:
       "monthly": 80
     }
   },
-  "commission": {
+    "commission": {
     "commission_per_call": 0,
-    "bonusAmount": 100,
+    "bonusAmount": 150,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
     "minimumVolume": {
-      "amount": "30",
+      "amount": "25",
       "period": "Monthly",
-      "unit": "Transactions"
+      "unit": "Calls"
     },
     "transactionCommission": 50,
     "additionalDetails": "A comprehensive and detailed explanation of the compensation structure (at least 2-3 sentences). Include payment frequency (e.g., weekly/monthly), specific conditions for the bonus, and any other relevant financial terms. Respond in the SAME LANGUAGE as the user query."
