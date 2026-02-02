@@ -69,7 +69,11 @@ async function fetchSkills() {
 async function fetchCurrencies() {
   try {
     console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-    const response = await fetch(CURRENCIES_API_URL);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 500000); // 5 seconds timeout
+
+    const response = await fetch(CURRENCIES_API_URL, { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await response.json() as any;
 
     if (data.success && data.data && data.data.length > 0) {
