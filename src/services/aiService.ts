@@ -677,8 +677,18 @@ JSON format:
           let currencyValue = parsedResponse.commission.currency;
 
           // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
+          // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
           if (currencyValue && typeof currencyValue === 'object' && currencyValue.$oid) {
-            // On garde tel quel
+            // Vérifier si c'est un ObjectId valide (24 chars hex)
+            const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(currencyValue.$oid);
+
+            if (!isValidObjectId) {
+              console.log(`⚠️ Currency $oid "${currencyValue.$oid}" n'est pas un ID valide. Recherche par code...`);
+              // C'est probablement un code comme "EUR" ms dans le champ $oid
+              const currencyId = this.findCurrencyId(currencyValue.$oid, currenciesData || []);
+              parsedResponse.commission.currency = { $oid: currencyId };
+            }
+            // Sinon, c'est un bon ID, on garde tel quel
           }
           // Cas 2: L'IA a retourné une string (code ou ID)
           else if (currencyValue && typeof currencyValue === 'string') {

@@ -72,16 +72,45 @@ async function fetchCurrencies() {
     const response = await fetch(CURRENCIES_API_URL);
     const data = await response.json() as any;
 
-    if (data.success && data.data) {
+    if (data.success && data.data && data.data.length > 0) {
       console.log(`✅ ${data.data.length} currencies fetched successfully`);
+      if (process.env.NODE_ENV !== 'production' && data.data.length > 0) {
+        // Debug log only in non-prod or if needed
+        console.log('Sample currency:', JSON.stringify(data.data[0], null, 2));
+      }
       return data.data.filter((currency: any) => currency.isActive);
     } else {
-      console.error('Error in currencies API response:', data);
-      return [];
+      console.error('Error or empty response from currencies API:', data);
+      throw new Error('Empty currency list');
     }
   } catch (error) {
     console.error('Error fetching currencies:', error);
-    return [];
+    console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
+
+    // Fallback hardcoded currencies with REAL IDs from production
+    return [
+      {
+        "_id": "68cae8918f8bb2a31a09b79f", // EUR
+        "code": "EUR",
+        "name": "Euro",
+        "symbol": "€",
+        "isActive": true
+      },
+      {
+        "_id": "68cae8918f8bb2a31a09b7c5", // USD
+        "code": "USD",
+        "name": "United States dollar",
+        "symbol": "$",
+        "isActive": true
+      },
+      {
+        "_id": "68cae8918f8bb2a31a09b78b", // GBP
+        "code": "GBP",
+        "name": "British pound",
+        "symbol": "£",
+        "isActive": true
+      }
+    ];
   }
 }
 
