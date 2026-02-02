@@ -93,6 +93,23 @@ const PREDEFINED_CATEGORIES = [
   'Multilingual Support'
 ];
 
+const TEAM_ROLES = [
+  "Team Lead",
+  "Senior Agent",
+  "Agent",
+  "Junior Agent",
+  "Supervisor",
+  "Manager",
+  "Coordinator",
+  "Specialist",
+  "Consultant",
+  "Representative",
+  "Associate",
+  "Assistant",
+  "Trainee",
+  "Intern"
+];
+
 export class AIService {
   private static isValidApiKey(): boolean {
     const key = process.env.OPENAI_API_KEY;
@@ -488,11 +505,15 @@ ${technicalSkillNames.join(', ')}
 CURRENCIES (use the ObjectId):
 ${currencyOptions}
 
+TEAM ROLES (choose the most appropriate ones from this list):
+${TEAM_ROLES.join(', ')}
+
 RULES:
 - Same language as input
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
+- team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
 - minimumVolume is a QUANTITY (e.g. number of calls). EXTRACT the exact number from text if stated (e.g. "17 calls or more" -> amount: "17"). Defaults to "30" ONLY if not specified.
 - If a bonus is mentioned for a specific volume (e.g. "bonus if > 17 calls"), set minimumVolume.amount to that number ("17") and put the bonus amount in bonusAmount.
 
