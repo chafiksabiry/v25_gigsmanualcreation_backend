@@ -557,7 +557,7 @@ JSON format:
       "unit": "Transactions"
     },
     "transactionCommission": 50,
-    "additionalDetails": "Detailed compensation information including base rates, bonuses, and payment terms."
+    "additionalDetails": "A comprehensive and detailed explanation of the compensation structure (at least 2-3 sentences). Include payment frequency (e.g., weekly/monthly), specific conditions for the bonus, and any other relevant financial terms. Respond in the SAME LANGUAGE as the user query."
   },
   "team": {
     "size": 1,
