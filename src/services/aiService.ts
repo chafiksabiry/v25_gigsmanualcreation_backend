@@ -94,20 +94,9 @@ const PREDEFINED_CATEGORIES = [
 ];
 
 const TEAM_ROLES = [
-  "Team Lead",
   "Agent Senior",
   "Agent",
   "Agent Junior",
-  "Supervisor",
-  "Manager",
-  "Coordinator",
-  "Specialist",
-  "Consultant",
-  "Representative",
-  "Associate",
-  "Assistant",
-  "Trainee",
-  "Intern"
 ];
 
 export class AIService {
