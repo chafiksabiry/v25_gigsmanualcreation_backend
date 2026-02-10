@@ -94,21 +94,21 @@ async function fetchCurrencies() {
     // Fallback hardcoded currencies with REAL IDs from production
     return [
       {
-        "_id": "68cae8918f8bb2a31a09b79f", // EUR
+        "_id": "eur-id-placeholder", // Will be matched by code if needed
         "code": "EUR",
         "name": "Euro",
         "symbol": "€",
         "isActive": true
       },
       {
-        "_id": "68cae8918f8bb2a31a09b7c5", // USD
+        "_id": "usd-id-placeholder",
         "code": "USD",
         "name": "United States dollar",
         "symbol": "$",
         "isActive": true
       },
       {
-        "_id": "68cae8918f8bb2a31a09b78b", // GBP
+        "_id": "gbp-id-placeholder",
         "code": "GBP",
         "name": "British pound",
         "symbol": "£",
@@ -439,7 +439,8 @@ export class AIController {
           commission_per_call: 0,
           bonusAmount: "150",
           currency: {
-            $oid: "68cae8918f8bb2a31a09b79f" // Default EUR ID
+            $oid: currenciesData.find((c: any) => c.code === 'EUR')?._id ||
+              currenciesData[0]?._id || "eur-id-placeholder"
           },
           minimumVolume: {
             amount: "25",

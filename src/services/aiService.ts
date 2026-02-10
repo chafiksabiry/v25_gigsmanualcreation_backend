@@ -95,9 +95,9 @@ const PREDEFINED_CATEGORIES = [
 
 const TEAM_ROLES = [
   "Team Lead",
-  "Senior Agent",
+  "Agent Senior",
   "Agent",
-  "Junior Agent",
+  "Agent Junior",
   "Supervisor",
   "Manager",
   "Coordinator",
@@ -719,8 +719,8 @@ JSON format:
           // Cas 3: Pas de devise ou format invalide -> Default EUR object
           else {
             const defaultCurrencyId = currenciesData && currenciesData.length > 0
-              ? this.findCurrencyId('EUR', currenciesData)
-              : "68cae8918f8bb2a31a09b79f";
+              ? (currenciesData.find((c: any) => c.code === 'EUR')?._id || currenciesData[0]._id)
+              : "eur-id-placeholder";
             parsedResponse.commission.currency = { $oid: defaultCurrencyId };
           }
 
