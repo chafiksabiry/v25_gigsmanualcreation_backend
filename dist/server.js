@@ -17,20 +17,29 @@ const bulkRoute_1 = __importDefault(require("./route/bulkRoute"));
 dotenv_1.default.config(); // Pour charger les variables d'environnement depuis un fichier .env
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5003;
+const allowedOrigins = [
+    'https://harx25pageslinks.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:5173',
+    'http://localhost:5179',
+    'http://localhost:5183',
+    'https://harxv25copilotfrontend.netlify.app',
+    "http://localhost:5190",
+    "https://harxv25trainingplatformfrontend.netlify.app",
+    'https://v25.harx.ai'
+];
 // CORS configuration
 const corsOptions = {
-    origin: [
-        'https://harx25pageslinks.netlify.app',
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:5173',
-        'http://localhost:5179',
-        'http://localhost:5183',
-        'https://harxv25copilotfrontend.netlify.app',
-        "http://localhost:5190",
-        "https://harxv25trainingplatformfrontend.netlify.app",
-        'https://v25.harx.ai'
-    ],
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.netlify.app') || origin.endsWith('.harx.ai')) {
+            callback(null, true);
+        }
+        else {
+            console.log('CORS blocked origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: [
@@ -79,7 +88,8 @@ app.use(body_parser_1.default.json({ limit: '50mb' }));
 app.use(body_parser_1.default.urlencoded({ limit: '50mb', extended: true }));
 app.use((0, cors_1.default)(corsOptions));
 // Connexion à MongoDB
-mongoose_1.default.connect(process.env.MONGO_URI)
+const mongoUri = process.env.MONGO_URI || 'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
+mongoose_1.default.connect(mongoUri)
     .then(() => {
     console.log('Connected to MongoDB');
 })

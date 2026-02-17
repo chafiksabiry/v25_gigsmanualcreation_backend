@@ -45,6 +45,11 @@ const PREDEFINED_CATEGORIES = [
     'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support',
     'Multilingual Support'
 ];
+const TEAM_ROLES = [
+    "Agent Senior",
+    "Agent",
+    "Agent Junior",
+];
 class AIService {
     static isValidApiKey() {
         const key = process.env.OPENAI_API_KEY;
@@ -374,11 +379,17 @@ ${technicalSkillNames.join(', ')}
 CURRENCIES (use the ObjectId):
 ${currencyOptions}
 
+TEAM ROLES (choose the most appropriate ones from this list):
+${TEAM_ROLES.join(', ')}
+
 RULES:
 - Same language as input
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
+- team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
+- minimumVolume is a QUANTITY (e.g. number of calls). EXTRACT the exact number from text if stated (e.g. "17 calls or more" -> amount: "17"). Defaults to "30" ONLY if not specified.
+- If a bonus is mentioned for a specific volume (e.g. "bonus if > 17 calls"), set minimumVolume.amount to that number ("17") and put the bonus amount in bonusAmount.
 
 JSON format:
 {
@@ -431,19 +442,19 @@ JSON format:
       "monthly": 80
     }
   },
-  "commission": {
+    "commission": {
     "commission_per_call": 0,
-    "bonusAmount": 100,
+    "bonusAmount": 150,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
     "minimumVolume": {
-      "amount": "30",
+      "amount": "25",
       "period": "Monthly",
-      "unit": "Transactions"
+      "unit": "Calls"
     },
     "transactionCommission": 50,
-    "additionalDetails": "Detailed compensation information including base rates, bonuses, and payment terms."
+    "additionalDetails": "A comprehensive and detailed explanation of the compensation structure (at least 2-3 sentences). Include payment frequency (e.g., weekly/monthly), specific conditions for the bonus, and any other relevant financial terms. Respond in the SAME LANGUAGE as the user query."
   },
   "team": {
     "size": 1,
@@ -546,8 +557,17 @@ JSON format:
                     // 1. Currency validation
                     let currencyValue = parsedResponse.commission.currency;
                     // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
+                    // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
                     if (currencyValue && typeof currencyValue === 'object' && currencyValue.$oid) {
-                        // On garde tel quel
+                        // Vérifier si c'est un ObjectId valide (24 chars hex)
+                        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(currencyValue.$oid);
+                        if (!isValidObjectId) {
+                            console.log(`⚠️ Currency $oid "${currencyValue.$oid}" n'est pas un ID valide. Recherche par code...`);
+                            // C'est probablement un code comme "EUR" ms dans le champ $oid
+                            const currencyId = this.findCurrencyId(currencyValue.$oid, currenciesData || []);
+                            parsedResponse.commission.currency = { $oid: currencyId };
+                        }
+                        // Sinon, c'est un bon ID, on garde tel quel
                     }
                     // Cas 2: L'IA a retourné une string (code ou ID)
                     else if (currencyValue && typeof currencyValue === 'string') {
@@ -557,8 +577,8 @@ JSON format:
                     // Cas 3: Pas de devise ou format invalide -> Default EUR object
                     else {
                         const defaultCurrencyId = currenciesData && currenciesData.length > 0
-                            ? this.findCurrencyId('EUR', currenciesData)
-                            : "68cae8918f8bb2a31a09b79f";
+                            ? (currenciesData.find((c) => c.code === 'EUR')?._id || currenciesData[0]._id)
+                            : "eur-id-placeholder";
                         parsedResponse.commission.currency = { $oid: defaultCurrencyId };
                     }
                     // 2. Strict type enforcement for other commission fields

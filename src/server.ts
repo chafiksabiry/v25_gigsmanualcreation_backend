@@ -15,20 +15,29 @@ dotenv.config();  // Pour charger les variables d'environnement depuis un fichie
 const app: Application = express();
 const port = process.env.PORT || 5003;
 
+const allowedOrigins = [
+  'https://harx25pageslinks.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:5179',
+  'http://localhost:5183',
+  'https://harxv25copilotfrontend.netlify.app',
+  "http://localhost:5190",
+  "https://harxv25trainingplatformfrontend.netlify.app",
+  'https://v25.harx.ai'
+];
+
 // CORS configuration
 const corsOptions = {
-  origin: [
-    'https://harx25pageslinks.netlify.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:5179',
-    'http://localhost:5183',
-    'https://harxv25copilotfrontend.netlify.app',
-    "http://localhost:5190",
-    "https://harxv25trainingplatformfrontend.netlify.app",
-    'https://v25.harx.ai'
-  ],
+  origin: function (origin: any, callback: any) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.netlify.app') || origin.endsWith('.harx.ai')) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [

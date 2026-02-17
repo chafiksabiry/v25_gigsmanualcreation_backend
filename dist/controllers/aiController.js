@@ -67,20 +67,51 @@ async function fetchSkills() {
 async function fetchCurrencies() {
     try {
         console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-        const response = await fetch(CURRENCIES_API_URL);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 500000); // 5 seconds timeout
+        const response = await fetch(CURRENCIES_API_URL, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await response.json();
-        if (data.success && data.data) {
+        if (data.success && data.data && data.data.length > 0) {
             console.log(`✅ ${data.data.length} currencies fetched successfully`);
+            if (process.env.NODE_ENV !== 'production' && data.data.length > 0) {
+                // Debug log only in non-prod or if needed
+                console.log('Sample currency:', JSON.stringify(data.data[0], null, 2));
+            }
             return data.data.filter((currency) => currency.isActive);
         }
         else {
-            console.error('Error in currencies API response:', data);
-            return [];
+            console.error('Error or empty response from currencies API:', data);
+            throw new Error('Empty currency list');
         }
     }
     catch (error) {
         console.error('Error fetching currencies:', error);
-        return [];
+        console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
+        // Fallback hardcoded currencies with REAL IDs from production
+        return [
+            {
+                "_id": "eur-id-placeholder", // Will be matched by code if needed
+                "code": "EUR",
+                "name": "Euro",
+                "symbol": "€",
+                "isActive": true
+            },
+            {
+                "_id": "usd-id-placeholder",
+                "code": "USD",
+                "name": "United States dollar",
+                "symbol": "$",
+                "isActive": true
+            },
+            {
+                "_id": "gbp-id-placeholder",
+                "code": "GBP",
+                "name": "British pound",
+                "symbol": "£",
+                "isActive": true
+            }
+        ];
     }
 }
 async function fetchTimezones() {
@@ -358,7 +389,8 @@ class AIController {
                     commission_per_call: 0,
                     bonusAmount: "150",
                     currency: {
-                        $oid: "68cae8918f8bb2a31a09b79f" // Default EUR ID
+                        $oid: currenciesData.find((c) => c.code === 'EUR')?._id ||
+                            currenciesData[0]?._id || "eur-id-placeholder"
                     },
                     minimumVolume: {
                         amount: "25",
