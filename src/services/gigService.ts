@@ -1,6 +1,7 @@
 import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
+import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFacing";
 // Import des modèles pour le populate
 import '../models/sectorModel';
 import '../models/activityModel';
@@ -23,7 +24,7 @@ export class GigService {
     try {
       const newGig = new Gig(gigData);
       await newGig.save();
-      return newGig;
+      return enrichGigForApi(newGig);
     } catch (error: any) {
       console.error("Error in createGig:", error);
       if (error.name === "ValidationError") {
@@ -35,7 +36,7 @@ export class GigService {
 
   static async getAllGigs() {
     try {
-      return await Gig.find()
+      const gigs = await Gig.find()
         .populate('sectors')
         .populate('activities')
         .populate('industries')
@@ -47,6 +48,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
@@ -55,7 +57,7 @@ export class GigService {
 
   static async getActiveGigs() {
     try {
-      return await Gig.find({ status: 'active' })
+      const activeGigs = await Gig.find({ status: 'active' })
         .populate('sectors')
         .populate('activities')
         .populate('industries')
@@ -68,6 +70,7 @@ export class GigService {
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
         .populate('companyId');
+      return enrichGigsForApi(activeGigs);
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
       throw new Error("Failed to retrieve active gigs");
@@ -95,7 +98,7 @@ export class GigService {
       if (!gig) {
         throw new Error("Gig not found");
       }
-      return gig;
+      return enrichGigForApi(gig);
     } catch (error) {
       console.error("Error in getGigById:", error);
       throw new Error("Failed to retrieve gig");
@@ -125,7 +128,7 @@ export class GigService {
       if (!gig) {
         throw new Error("Gig not found");
       }
-      return gig;
+      return enrichGigForApi(gig);
     } catch (error) {
       console.error("Error in getGigDetailsById:", error);
       throw new Error("Failed to retrieve gig details");
@@ -159,7 +162,7 @@ export class GigService {
       }
 
       console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
-      return updatedGig;
+      return enrichGigForApi(updatedGig);
     } catch (error) {
       console.error("❌ SERVICE - Error in updateGig:", error);
       console.error("❌ SERVICE - Error details:", error instanceof Error ? error.message : 'Unknown error');
@@ -222,7 +225,7 @@ export class GigService {
       if (!deletedGig) {
         throw new Error("Gig not found");
       }
-      return deletedGig;
+      return enrichGigForApi(deletedGig);
     } catch (error) {
       console.error("Error in deleteGig:", error);
       throw new Error("Failed to delete gig");
@@ -247,7 +250,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
-      return gigs;
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getGigsByUserId:", error);
       throw new Error("Failed to retrieve gigs");
@@ -272,7 +275,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
-      return gigs;
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getGigsByCompanyId:", error);
       throw new Error("Failed to retrieve gigs");
@@ -320,7 +323,7 @@ export class GigService {
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
 
-      return lastGig;
+      return lastGig ? enrichGigForApi(lastGig) : null;
     } catch (error) {
       console.error("Error in getLastGigByCompanyId:", error);
       throw new Error("Failed to retrieve last gig for company");
