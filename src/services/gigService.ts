@@ -2,6 +2,7 @@ import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
 import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFacing";
+import { Language } from "../models/languageModel";
 // Import des modèles pour le populate
 import '../models/sectorModel';
 import '../models/activityModel';
@@ -20,8 +21,27 @@ export class GigService {
     this.gigRepository = gigRepository;
   }
 
+  private static async resolveLanguages(gigData: any) {
+    if (gigData.skills && gigData.skills.languages) {
+      for (const langItem of gigData.skills.languages) {
+        if (langItem.language && typeof langItem.language === 'string' && !mongoose.Types.ObjectId.isValid(langItem.language)) {
+          const languageDoc = await Language.findOne({ name: langItem.language });
+          if (languageDoc) {
+            langItem.language = languageDoc._id;
+          } else {
+            const fallbackDoc = await Language.findOne({ name: new RegExp(`^${langItem.language}$`, 'i') });
+            if (fallbackDoc) {
+              langItem.language = fallbackDoc._id;
+            }
+          }
+        }
+      }
+    }
+  }
+
   static async createGig(gigData: any) {
     try {
+      await GigService.resolveLanguages(gigData);
       const newGig = new Gig(gigData);
       await newGig.save();
       return enrichGigForApi(newGig);
@@ -137,6 +157,7 @@ export class GigService {
 
   static async updateGig(id: string, updateData: any) {
     try {
+      await GigService.resolveLanguages(updateData);
       console.log('🔍 SERVICE - updateGig called with ID:', id);
       console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
       

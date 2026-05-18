@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GigService = void 0;
 const gigModel_1 = require("../models/gigModel");
 const mongoose_1 = __importDefault(require("mongoose"));
+const gigCommissionAgentFacing_1 = require("../utils/gigCommissionAgentFacing");
+const languageModel_1 = require("../models/languageModel");
 // Import des modèles pour le populate
 require("../models/sectorModel");
 require("../models/activityModel");
@@ -20,11 +22,30 @@ class GigService {
     constructor(gigRepository) {
         this.gigRepository = gigRepository;
     }
+    static async resolveLanguages(gigData) {
+        if (gigData.skills && gigData.skills.languages) {
+            for (const langItem of gigData.skills.languages) {
+                if (langItem.language && typeof langItem.language === 'string' && !mongoose_1.default.Types.ObjectId.isValid(langItem.language)) {
+                    const languageDoc = await languageModel_1.Language.findOne({ name: langItem.language });
+                    if (languageDoc) {
+                        langItem.language = languageDoc._id;
+                    }
+                    else {
+                        const fallbackDoc = await languageModel_1.Language.findOne({ name: new RegExp(`^${langItem.language}$`, 'i') });
+                        if (fallbackDoc) {
+                            langItem.language = fallbackDoc._id;
+                        }
+                    }
+                }
+            }
+        }
+    }
     static async createGig(gigData) {
         try {
+            await GigService.resolveLanguages(gigData);
             const newGig = new gigModel_1.Gig(gigData);
             await newGig.save();
-            return newGig;
+            return (0, gigCommissionAgentFacing_1.enrichGigForApi)(newGig);
         }
         catch (error) {
             console.error("Error in createGig:", error);
@@ -36,7 +57,7 @@ class GigService {
     }
     static async getAllGigs() {
         try {
-            return await gigModel_1.Gig.find()
+            const gigs = await gigModel_1.Gig.find()
                 .populate('sectors')
                 .populate('activities')
                 .populate('industries')
@@ -48,6 +69,7 @@ class GigService {
                 .populate('skills.technical.skill')
                 .populate('skills.soft.skill')
                 .populate('skills.languages.language');
+            return (0, gigCommissionAgentFacing_1.enrichGigsForApi)(gigs);
         }
         catch (error) {
             console.error("Error in getAllGigs:", error);
@@ -56,7 +78,7 @@ class GigService {
     }
     static async getActiveGigs() {
         try {
-            return await gigModel_1.Gig.find({ status: 'active' })
+            const activeGigs = await gigModel_1.Gig.find({ status: 'active' })
                 .populate('sectors')
                 .populate('activities')
                 .populate('industries')
@@ -69,6 +91,7 @@ class GigService {
                 .populate('skills.soft.skill')
                 .populate('skills.languages.language')
                 .populate('companyId');
+            return (0, gigCommissionAgentFacing_1.enrichGigsForApi)(activeGigs);
         }
         catch (error) {
             console.error("Error in getActiveGigs:", error);
@@ -95,7 +118,7 @@ class GigService {
             if (!gig) {
                 throw new Error("Gig not found");
             }
-            return gig;
+            return (0, gigCommissionAgentFacing_1.enrichGigForApi)(gig);
         }
         catch (error) {
             console.error("Error in getGigById:", error);
@@ -123,7 +146,7 @@ class GigService {
             if (!gig) {
                 throw new Error("Gig not found");
             }
-            return gig;
+            return (0, gigCommissionAgentFacing_1.enrichGigForApi)(gig);
         }
         catch (error) {
             console.error("Error in getGigDetailsById:", error);
@@ -132,6 +155,7 @@ class GigService {
     }
     static async updateGig(id, updateData) {
         try {
+            await GigService.resolveLanguages(updateData);
             console.log('🔍 SERVICE - updateGig called with ID:', id);
             console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
             if (!mongoose_1.default.Types.ObjectId.isValid(id)) {
@@ -149,7 +173,7 @@ class GigService {
                 throw new Error("Gig not found");
             }
             console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
-            return updatedGig;
+            return (0, gigCommissionAgentFacing_1.enrichGigForApi)(updatedGig);
         }
         catch (error) {
             console.error("❌ SERVICE - Error in updateGig:", error);
@@ -201,7 +225,7 @@ class GigService {
             if (!deletedGig) {
                 throw new Error("Gig not found");
             }
-            return deletedGig;
+            return (0, gigCommissionAgentFacing_1.enrichGigForApi)(deletedGig);
         }
         catch (error) {
             console.error("Error in deleteGig:", error);
@@ -225,7 +249,7 @@ class GigService {
                 .populate('skills.technical.skill')
                 .populate('skills.soft.skill')
                 .populate('skills.languages.language');
-            return gigs;
+            return (0, gigCommissionAgentFacing_1.enrichGigsForApi)(gigs);
         }
         catch (error) {
             console.error("Error in getGigsByUserId:", error);
@@ -249,7 +273,7 @@ class GigService {
                 .populate('skills.technical.skill')
                 .populate('skills.soft.skill')
                 .populate('skills.languages.language');
-            return gigs;
+            return (0, gigCommissionAgentFacing_1.enrichGigsForApi)(gigs);
         }
         catch (error) {
             console.error("Error in getGigsByCompanyId:", error);
@@ -293,7 +317,7 @@ class GigService {
                 .populate('skills.technical.skill')
                 .populate('skills.soft.skill')
                 .populate('skills.languages.language');
-            return lastGig;
+            return lastGig ? (0, gigCommissionAgentFacing_1.enrichGigForApi)(lastGig) : null;
         }
         catch (error) {
             console.error("Error in getLastGigByCompanyId:", error);

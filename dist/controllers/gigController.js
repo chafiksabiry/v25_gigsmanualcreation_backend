@@ -145,75 +145,44 @@ class GigController {
     }
     static async getGigDestinationZoneById(req, res) {
         try {
-            console.log('🔍 getGigDestinationZoneById - Request for gig ID:', req.params.id);
+            console.log('🔍 getGigDestinationZoneById - Gig ID:', req.params.id);
             if (!mongoose_1.default.Types.ObjectId.isValid(req.params.id)) {
                 console.log('❌ Invalid Gig ID format:', req.params.id);
                 return res.status(400).json({ message: "Invalid Gig ID format", data: null });
             }
             const gig = await gigService_1.GigService.getGigById(req.params.id);
+            console.log('🔍 Gig found:', gig ? 'Yes' : 'No');
             if (!gig) {
-                console.log('❌ Gig not found:', req.params.id);
+                console.log('❌ Gig not found');
                 return res.status(404).json({ message: "Gig not found", data: null });
             }
-            console.log('✅ Gig found:', gig._id);
-            console.log('🔍 Destination zone value:', gig.destination_zone);
-            console.log('🔍 Destination zone type:', typeof gig.destination_zone);
             const destinationZone = gig.destination_zone;
+            console.log('🔍 Destination zone:', destinationZone);
             if (!destinationZone) {
-                console.log('❌ Destination zone not set for gig:', req.params.id);
+                console.log('❌ Destination zone not set for this gig');
                 return res.status(404).json({ message: "Destination zone not set", data: null });
             }
-            // Validate that destination_zone is a valid ObjectId
-            if (!mongoose_1.default.Types.ObjectId.isValid(destinationZone.toString())) {
-                console.log('❌ Invalid destination_zone ObjectId:', destinationZone);
-                return res.status(400).json({
-                    message: "Invalid destination zone format",
-                    data: null
-                });
-            }
             // Récupérer les informations du pays depuis la base de données
-            console.log('🔍 Searching for country with ID:', destinationZone);
-            let country;
-            try {
-                country = await countryModel_1.Country.findById(destinationZone).lean();
-            }
-            catch (dbError) {
-                console.error('❌ Database error when querying Country:', dbError);
-                return res.status(500).json({
-                    message: "Database error while retrieving country information",
-                    error: dbError instanceof Error ? dbError.message : 'Unknown database error',
-                    data: null
-                });
-            }
+            const country = await countryModel_1.Country.findById(destinationZone).lean();
+            console.log('🔍 Country found:', country ? 'Yes' : 'No');
             if (!country) {
                 console.log('❌ Country not found in database for ID:', destinationZone);
-                console.log('⚠️ Returning destination_zone ID as fallback');
-                // Fallback: retourner l'ID si le pays n'est pas trouvé
-                return res.status(200).json({
-                    message: "Gig destination zone retrieved (country details not available)",
-                    data: {
-                        id: destinationZone,
-                        code: null,
-                        name: null,
-                        officialName: null,
-                        warning: "Country details not found in database"
-                    }
-                });
+                return res.status(404).json({ message: "Country not found in database", data: null });
             }
-            console.log('✅ Country found:', country.name?.common || 'Unknown');
+            console.log('✅ Successfully retrieved destination zone:', country.cca2);
             res.status(200).json({
                 message: "Gig destination zone retrieved successfully",
                 data: {
                     id: country._id,
                     code: country.cca2,
-                    name: country.name?.common,
-                    officialName: country.name?.official
+                    name: country.name.common,
+                    officialName: country.name.official
                 }
             });
         }
         catch (error) {
             console.error("❌ Error in getGigDestinationZoneById:", error);
-            console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack');
+            console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack trace');
             res.status(500).json({
                 message: "Failed to retrieve gig destination zone",
                 error: error instanceof Error ? error.message : 'Unknown error',
