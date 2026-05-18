@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
 import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFacing";
 import { Language } from "../models/languageModel";
+import axios from 'axios';
 // Import des modèles pour le populate
 import '../models/sectorModel';
 import '../models/activityModel';
@@ -44,6 +45,18 @@ export class GigService {
       await GigService.resolveLanguages(gigData);
       const newGig = new Gig(gigData);
       await newGig.save();
+
+      // Update onboarding progress (Step 3: Create a Gig)
+      try {
+        const onboardingUrl = `https://v25searchcompanywizardbackend-production.up.railway.app/api/onboarding/phases/2/steps/3/complete?companyId=${newGig.companyId}`;
+        console.log(`[GigService] Calling onboarding API: ${onboardingUrl}`);
+        const response = await axios.put(onboardingUrl);
+        console.log(`[GigService] Onboarding update response status:`, response.status);
+      } catch (onboardingError) {
+        console.error(`[GigService] Failed to update onboarding progress:`, onboardingError);
+        // We don't fail the gig creation if onboarding update fails, but we log it.
+      }
+
       return enrichGigForApi(newGig);
     } catch (error: any) {
       console.error("Error in createGig:", error);
