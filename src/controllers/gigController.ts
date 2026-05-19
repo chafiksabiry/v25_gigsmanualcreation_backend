@@ -136,6 +136,38 @@ export class GigController {
         });
       }
 
+      // Si on active le gig, vérifier le solde de la company
+      if (updateData.status === 'active') {
+        try {
+          const existingGig = await GigService.getGigById(id);
+          if (existingGig && existingGig.companyId) {
+            const companyId = existingGig.companyId._id || existingGig.companyId;
+            const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL || 'https://v25comporchestratorback-production.up.railway.app';
+            console.log(`🔍 BACKEND - Verifying balance for company ${companyId} at ${compOrchestratorUrl}`);
+            const balanceResponse = await fetch(`${compOrchestratorUrl}/api/escrow/wallet/${companyId}`);
+            if (balanceResponse.ok) {
+              const balanceData = await balanceResponse.json() as any;
+              console.log(`🔍 BACKEND - Balance data received:`, JSON.stringify(balanceData));
+              if (balanceData.success && balanceData.data) {
+                const balance = balanceData.data.balance || 0;
+                if (balance <= 0) {
+                  console.log(`❌ BACKEND - Insufficient balance (${balance} €) for company ${companyId}`);
+                  return res.status(400).json({
+                    message: "Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.",
+                    data: null
+                  });
+                }
+              }
+            } else {
+              console.warn(`⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`);
+            }
+          }
+        } catch (checkError) {
+          console.error('⚠️ BACKEND - Failed to verify company balance:', checkError);
+          // Permettre de continuer en cas d'erreur de connexion au microservice pour éviter de bloquer l'application
+        }
+      }
+
       console.log('🔍 BACKEND - Calling GigService.updateGig...');
       const updatedGig = await GigService.updateGig(id, updateData);
 
