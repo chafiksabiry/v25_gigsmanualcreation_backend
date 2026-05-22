@@ -191,6 +191,68 @@ export class GigController {
     }
   }
 
+  /**
+   * PATCH /gigs/:id/setup-steps
+   *
+   * Updates one or more flags inside the per-gig activation checklist
+   * (`setupSteps`). Accepts a partial body — only provided fields are
+   * touched. Unknown keys are rejected to keep the schema clean.
+   *
+   * Body: { telephony?: boolean, uploadContacts?: boolean, ... }
+   * Returns the updated gig document.
+   */
+  static async updateSetupSteps(req: Request, res: Response) {
+    try {
+      const id = req.params.id;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid Gig ID format', data: null });
+      }
+
+      const allowedKeys = [
+        'telephony',
+        'uploadContacts',
+        'callScript',
+        'knowledgeBase',
+        'repOnboarding',
+        'sessionPlanning',
+        'gigActivation',
+      ] as const;
+
+      const body = req.body || {};
+      const $set: Record<string, boolean> = {};
+      for (const key of allowedKeys) {
+        if (typeof body[key] === 'boolean') {
+          // Use the dotted-path form so mongoose only touches the
+          // requested sub-key without overwriting siblings.
+          $set[`setupSteps.${key}`] = body[key];
+        }
+      }
+
+      if (Object.keys($set).length === 0) {
+        return res.status(400).json({
+          message: 'No valid setupSteps fields provided',
+          data: null,
+        });
+      }
+
+      const updatedGig = await GigService.updateGig(id, $set);
+      if (!updatedGig) {
+        return res.status(404).json({ message: 'Gig not found', data: null });
+      }
+      return res.status(200).json({
+        message: 'Setup steps updated successfully',
+        data: updatedGig,
+      });
+    } catch (error) {
+      console.error('❌ BACKEND - Error in updateSetupSteps:', error);
+      return res.status(500).json({
+        message: 'Failed to update setup steps',
+        data: null,
+      });
+    }
+  }
+
   static async getGigDestinationZoneById(req: Request, res: Response) {
     try {
       console.log('🔍 getGigDestinationZoneById - Gig ID:', req.params.id);

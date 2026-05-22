@@ -94,6 +94,32 @@ export interface IGig extends Document {
   highlights: string[];
   deliverables: string[];
   status: 'to_activate' | 'active' | 'inactive' | 'archived';
+  /**
+   * Per-gig activation checklist.
+   *
+   * Mirrors the seven steps the rep must complete from the dashboard
+   * before a gig can be activated (see `GigSetupChecklist.tsx`):
+   *   • telephony        — at least one phone number purchased for the gig
+   *   • uploadContacts   — at least one lead imported for the gig
+   *   • callScript       — at least one call script saved for the gig
+   *   • knowledgeBase    — at least one KB document linked to the gig
+   *   • repOnboarding    — at least one training journey exists
+   *   • sessionPlanning  — at least one time-slot reserved
+   *   • gigActivation    — gig flipped to `status: 'active'`
+   *
+   * Defaults to all `false` on creation. Downstream services bump
+   * individual flags via `PATCH /:id/setup-steps` (or the regular
+   * `PUT /:id`) once the corresponding artefact is created.
+   */
+  setupSteps: {
+    telephony: boolean;
+    uploadContacts: boolean;
+    callScript: boolean;
+    knowledgeBase: boolean;
+    repOnboarding: boolean;
+    sessionPlanning: boolean;
+    gigActivation: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -220,9 +246,57 @@ export const GigSchema = new Schema<IGig>(
       default: 'to_activate',
       required: true
     },
+    // Activation checklist — see the `IGig.setupSteps` JSDoc above for
+    // the full per-step contract. Stored as a nested object so each
+    // flag can be patched individually (`{ $set: { 'setupSteps.telephony': true } }`).
+    setupSteps: {
+      telephony:        { type: Boolean, default: false },
+      uploadContacts:   { type: Boolean, default: false },
+      callScript:       { type: Boolean, default: false },
+      knowledgeBase:    { type: Boolean, default: false },
+      repOnboarding:    { type: Boolean, default: false },
+      sessionPlanning:  { type: Boolean, default: false },
+      gigActivation:    { type: Boolean, default: false },
+    },
   },
   { timestamps: true }
 );
 
+
+// Keep `setupSteps.gigActivation` aligned with the gig's lifecycle:
+// the very last checklist tile flips to `true` automatically the moment
+// the status becomes `active`, without forcing callers to set both fields.
+// We hook into both `save` (for `new Gig(...).save()`) and `findOneAndUpdate`
+// (for the `PUT /:id` controller path).
+GigSchema.pre('save', function (next) {
+  if (this.status === 'active') {
+    if (!this.setupSteps) {
+      // @ts-ignore — sub-doc defaults haven't been applied yet on a fresh doc
+      this.setupSteps = {
+        telephony: false,
+        uploadContacts: false,
+        callScript: false,
+        knowledgeBase: false,
+        repOnboarding: false,
+        sessionPlanning: false,
+        gigActivation: true,
+      };
+    } else {
+      this.setupSteps.gigActivation = true;
+    }
+  }
+  next();
+});
+
+GigSchema.pre('findOneAndUpdate', function (next) {
+  const update = this.getUpdate() as any;
+  if (!update) return next();
+  const $set = update.$set || update;
+  if ($set?.status === 'active') {
+    update.$set = { ...($set || {}), 'setupSteps.gigActivation': true };
+    this.setUpdate(update);
+  }
+  next();
+});
 
 export const Gig = model<IGig>('Gig', GigSchema);
