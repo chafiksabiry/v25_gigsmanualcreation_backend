@@ -7,7 +7,8 @@
     "dev": "nodemon --exec npx ts-node src/server.ts",
     "build": "node node_modules/typescript/lib/tsc.js",
     "backfill:setup-steps": "ts-node src/scripts/backfillSetupSteps.ts",
-    "backfill:setup-steps:dry": "ts-node src/scripts/backfillSetupSteps.ts --dry-run"
+    "backfill:setup-steps:dry": "ts-node src/scripts/backfillSetupSteps.ts --dry-run",
+    "backfill:setup-steps:force": "ts-node src/scripts/backfillSetupSteps.ts --force"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",

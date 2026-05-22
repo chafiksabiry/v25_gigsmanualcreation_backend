@@ -18,6 +18,14 @@
  *   npm run backfill:setup-steps              # write to DB
  *   npm run backfill:setup-steps -- --dry-run # report only, no writes
  *   npm run backfill:setup-steps -- --gigId=<id>  # single gig
+ *   npm run backfill:setup-steps -- --force   # rewrite even if no drift
+ *
+ * Behaviour:
+ *   • Gigs without a `setupSteps` field at all are ALWAYS initialised
+ *     (e.g. gigs created before the schema change like the ones with
+ *     `status: 'to_activate'`).
+ *   • Gigs already carrying a `setupSteps` doc are only updated if at
+ *     least one flag drifted vs the live probe (unless `--force`).
  *
  * The script is idempotent: re-running it simply re-syncs each flag
  * with the current state of the side services. Safe to schedule via
@@ -67,6 +75,7 @@ const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 15_000;
 // CLI flags
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const FORCE = args.includes('--force');
 const GIG_ID_FILTER = args.find((a) => a.startsWith('--gigId='))?.split('=')[1];
 
 // ──────────────────────────────────────────────────────────────────────
@@ -258,14 +267,22 @@ async function main() {
   const phoneByGig = await fetchPhoneNumbersByGig();
   console.log(`✓ phone-numbers directory: ${Object.keys(phoneByGig).length} mapped gig(s)\n`);
 
-  let written = 0;
-  let skipped = 0;
+  let initialised = 0;
+  let updated = 0;
+  let unchanged = 0;
   let activated = 0;
+  let completed = 0;
 
   for (let i = 0; i < gigs.length; i += 1) {
     const gig = gigs[i] as any;
     const isActive = gig.status === 'active';
     const tag = `[${i + 1}/${gigs.length}] ${gig.title || gig._id}`;
+    // The schema was added later, so a lot of legacy docs don't carry
+    // the field at all yet. We always want to materialise it.
+    const hadField =
+      gig.setupSteps != null &&
+      typeof gig.setupSteps === 'object' &&
+      Object.keys(gig.setupSteps).length > 0;
 
     try {
       const flags = await probeGig(
@@ -276,33 +293,49 @@ async function main() {
         phoneByGig
       );
 
-      const before = gig.setupSteps || {};
+      const before = (gig.setupSteps || {}) as Record<string, boolean | undefined>;
       const drift = (Object.keys(flags) as Array<keyof StepFlags>).filter(
         (k) => Boolean(before[k]) !== flags[k]
       );
+      const allDone = Object.values(flags).every(Boolean);
 
       console.log(
-        ` ${tag}\n   status=${gig.status}  progress=${progressLabel(flags)}  ${formatFlags(flags)}`
+        ` ${tag}\n   status=${gig.status}  hadField=${hadField ? 'yes' : 'NO '}  progress=${progressLabel(flags)}  ${formatFlags(flags)}`
       );
 
-      if (drift.length === 0) {
-        console.log('   = no change');
-        skipped += 1;
+      // Decide whether to write. Three reasons to write:
+      //   1. The field doesn't exist yet → always materialise it.
+      //   2. At least one flag drifted vs the live probe.
+      //   3. --force was passed.
+      const shouldWrite = !hadField || drift.length > 0 || FORCE;
+
+      if (drift.length > 0) {
+        console.log(
+          `   Δ ${drift.map((k) => `${k}:${Boolean(before[k]) ? '✓' : '·'}→${flags[k] ? '✓' : '·'}`).join(' ')}`
+        );
+      }
+
+      if (!shouldWrite) {
+        console.log('   = already up-to-date');
+        unchanged += 1;
         continue;
       }
 
-      console.log(
-        `   Δ ${drift.map((k) => `${k}:${Boolean(before[k]) ? '✓' : '·'}→${flags[k] ? '✓' : '·'}`).join(' ')}`
-      );
+      const reason = !hadField
+        ? 'init  '
+        : drift.length > 0
+        ? 'update'
+        : 'force ';
+      console.log(`   → ${reason}  ${allDone ? '(all steps completed)' : '(incomplete)'}`);
 
       if (!DRY_RUN) {
         await Gig.findByIdAndUpdate(gig._id, { $set: { setupSteps: flags } });
-        written += 1;
-      } else {
-        skipped += 1;
       }
 
+      if (!hadField) initialised += 1;
+      else updated += 1;
       if (flags.gigActivation && !before?.gigActivation) activated += 1;
+      if (allDone) completed += 1;
     } catch (err) {
       console.error(` ${tag}\n   ✗ error:`, (err as Error).message);
     }
@@ -310,13 +343,15 @@ async function main() {
 
   const elapsed = ((Date.now() - tStart) / 1000).toFixed(1);
   console.log('\n───────────────────────────────────────────────');
-  console.log(' SUMMARY');
+  console.log(' SUMMARY', DRY_RUN ? '(dry-run, no DB writes)' : '');
   console.log('───────────────────────────────────────────────');
-  console.log(' processed :', gigs.length);
-  console.log(' written   :', written, DRY_RUN ? '(dry-run, no DB writes)' : '');
-  console.log(' unchanged :', skipped);
-  console.log(' activated :', activated);
-  console.log(' elapsed   :', `${elapsed}s`);
+  console.log(' processed   :', gigs.length);
+  console.log(' initialised :', initialised, '(legacy gigs without setupSteps)');
+  console.log(' updated     :', updated,     '(field existed, flags drifted)');
+  console.log(' unchanged   :', unchanged);
+  console.log(' activated ✓ :', activated);
+  console.log(' fully done  :', completed);
+  console.log(' elapsed     :', `${elapsed}s`);
 
   await mongoose.disconnect();
   console.log('✓ disconnected, exiting.');
