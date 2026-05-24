@@ -374,6 +374,81 @@ export class AIService {
     return countriesData.find((c) => String(c?._id) === countryId) || null;
   }
 
+  /** Attach human-readable labels for preview (destination, timezone, currency). */
+  private static enrichGigResponseMeta(
+    parsedResponse: any,
+    countriesData: any[] | undefined,
+    timezonesData: any[] | undefined,
+    currenciesData: any[] | undefined
+  ): void {
+    const destId = this.extractMongoId(parsedResponse.destination_zone);
+    if (destId) {
+      const country = this.getCountryById(countriesData, destId);
+      if (country) {
+        parsedResponse.destination_zone_meta = {
+          _id: String(country._id),
+          name: {
+            common: country.name?.common || '',
+            official: country.name?.official || '',
+          },
+          cca2: country.cca2 || '',
+          flag: country.flags?.svg || country.flags?.png || '',
+        };
+      }
+    }
+
+    const tzId = this.extractMongoId(
+      parsedResponse.availability?.time_zone ?? parsedResponse.schedule?.time_zone
+    );
+    if (tzId && timezonesData?.length) {
+      const tz = timezonesData.find((t) => String(t._id) === tzId);
+      if (tz) {
+        const timeZoneMeta = {
+          _id: String(tz._id),
+          zoneName: tz.zoneName || tz.name || '',
+          countryCode: tz.countryCode || '',
+          countryName: tz.countryName || '',
+          gmtOffset: tz.gmtOffset,
+        };
+        if (parsedResponse.availability) {
+          parsedResponse.availability.time_zone_meta = timeZoneMeta;
+        }
+        if (parsedResponse.schedule) {
+          parsedResponse.schedule.time_zone_meta = timeZoneMeta;
+        }
+      }
+    }
+
+    const currencyId = this.extractMongoId(parsedResponse.commission?.currency);
+    if (currencyId && currenciesData?.length) {
+      const currency = currenciesData.find((c) => String(c._id) === currencyId);
+      if (currency && parsedResponse.commission) {
+        parsedResponse.commission.currency_meta = {
+          _id: String(currency._id),
+          code: currency.code || '',
+          name: currency.name || '',
+          symbol: currency.symbol || '',
+        };
+      }
+    }
+
+    if (parsedResponse.team?.territories?.length && countriesData?.length) {
+      parsedResponse.team.territories_meta = parsedResponse.team.territories
+        .map((territory: unknown) => {
+          const id = this.extractMongoId(territory);
+          if (!id) return null;
+          const doc = this.getCountryById(countriesData, id);
+          if (!doc) return null;
+          return {
+            _id: String(doc._id),
+            name: { common: doc.name?.common || '' },
+            cca2: doc.cca2 || '',
+          };
+        })
+        .filter(Boolean);
+    }
+  }
+
   private static normalizeDestinationZone(
     rawValue: unknown,
     countriesData: any[] | undefined,
@@ -1163,6 +1238,8 @@ JSON format:
             this.findTimezoneId(tz, timezonesData, timezoneContext)
           );
         }
+
+        this.enrichGigResponseMeta(parsedResponse, countriesData, timezonesData, currenciesData);
 
         return parsedResponse;
       } catch (error) {
