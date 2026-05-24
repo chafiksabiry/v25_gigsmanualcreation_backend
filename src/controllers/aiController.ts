@@ -127,15 +127,34 @@ async function fetchTimezones() {
   try {
     console.log(`🔍 Reading timezones directly from MongoDB collection "timezones"`);
 
-    const docs = await Timezone.find({})
-      .select({ name: 1, offset: 1, abbreviation: 1, description: 1 })
-      .lean();
+    // NB: real documents in collection use `zoneName` + `countryCode` + `gmtOffset` + `countryName`
+    // — older schema with `name` / `offset` is kept as alias fallback below.
+    const docs = await Timezone.collection
+      .find({}, {
+        projection: {
+          zoneName: 1,
+          countryCode: 1,
+          countryName: 1,
+          gmtOffset: 1,
+          name: 1,
+          offset: 1,
+          abbreviation: 1,
+          description: 1,
+        },
+      })
+      .toArray();
 
     const timezones = docs.map((doc: any) => ({
       _id: String(doc._id),
-      name: doc.name,
-      offset: doc.offset,
-      abbreviation: doc.abbreviation,
+      zoneName: doc.zoneName || doc.name || '',
+      name: doc.zoneName || doc.name || '',
+      countryCode: doc.countryCode || '',
+      countryName: doc.countryName || '',
+      gmtOffset: doc.gmtOffset ?? null,
+      offset: doc.offset || (typeof doc.gmtOffset === 'number'
+        ? `${doc.gmtOffset >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(doc.gmtOffset) / 3600)).padStart(2, '0')}:${String(Math.floor((Math.abs(doc.gmtOffset) % 3600) / 60)).padStart(2, '0')}`
+        : ''),
+      abbreviation: doc.abbreviation || '',
       description: doc.description || '',
     }));
 
