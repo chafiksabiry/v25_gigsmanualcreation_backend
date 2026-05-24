@@ -105,6 +105,72 @@ export class AIService {
     return !!(key && key !== 'your_openai_api_key_here' && key.startsWith('sk-'));
   }
 
+  /** Extract a 24-char MongoDB ObjectId from string, { $oid }, { _id }, or array */
+  private static extractMongoId(value: unknown): string | null {
+    if (value == null) return null;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^[0-9a-fA-F]{24}$/.test(trimmed)) return trimmed;
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const id = this.extractMongoId(item);
+        if (id) return id;
+      }
+      return null;
+    }
+
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      if (obj.$oid != null) return this.extractMongoId(obj.$oid);
+      if (obj._id != null) return this.extractMongoId(obj._id);
+    }
+
+    return null;
+  }
+
+  private static getCountryCommonName(country: any): string {
+    return country?.name?.common || '';
+  }
+
+  private static getEntityLabel(entity: any): string {
+    if (!entity) return '';
+    if (typeof entity === 'string') return entity;
+    if (typeof entity.name === 'string') return entity.name;
+    if (entity.name?.common) return entity.name.common;
+    return String(entity.code || '');
+  }
+
+  private static normalizeDestinationZone(
+    rawValue: unknown,
+    countriesData: any[] | undefined,
+    description: string
+  ): string {
+    const fromMongo = this.extractMongoId(rawValue);
+    if (fromMongo) return fromMongo;
+
+    if (typeof rawValue === 'string' && rawValue.trim() && !rawValue.includes('[object')) {
+      const byName = this.findCountryId(rawValue.trim(), countriesData, description);
+      if (byName) return byName;
+    }
+
+    const detected = this.analyzeDescriptionForCountry(description, countriesData);
+    if (detected) {
+      const byContext = this.findCountryId(detected, countriesData, description);
+      if (byContext) return byContext;
+    }
+
+    if (countriesData && countriesData.length > 0) {
+      const france = countriesData.find((c) => c?.name?.common === 'France');
+      return france?._id || countriesData[0]._id;
+    }
+
+    return '';
+  }
+
   /**
    * Trouve la catégorie la plus appropriée parmi les catégories prédéfinies
    */
@@ -468,24 +534,26 @@ export class AIService {
     // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
     const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
     const sortedCountries = countriesData ? [...countriesData].sort((a, b) => {
-      const aIsPriority = priorityCountries.includes(a.name.common);
-      const bIsPriority = priorityCountries.includes(b.name.common);
+      const aName = this.getCountryCommonName(a);
+      const bName = this.getCountryCommonName(b);
+      const aIsPriority = priorityCountries.includes(aName);
+      const bIsPriority = priorityCountries.includes(bName);
       if (aIsPriority && !bIsPriority) return -1;
       if (!aIsPriority && bIsPriority) return 1;
-      return a.name.common.localeCompare(b.name.common);
+      return aName.localeCompare(bName);
     }) : [];
 
     // Limiter à 30 pays maximum pour respecter la limite de tokens OpenAI
-    const countryOptions = sortedCountries.slice(0, 30).map(country => `${country.name.common}: ${country._id}`).join(', ');
+    const countryOptions = sortedCountries.slice(0, 30).map(country => `${this.getCountryCommonName(country)}: ${country._id}`).join(', ');
 
     console.log(`🔍 Prompt préparé avec ${sortedCountries.length} pays (limité à 30), ${activityNames.length} activités`);
-    console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => c.name.common).join(', ')}`);
+    console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => this.getCountryCommonName(c)).join(', ')}`);
 
     const prompt = `Based on: "${description}"
 
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as input
-- For destination_zone, use ONLY MongoDB ObjectId from COUNTRIES list
+- For destination_zone, use EXACTLY ONE MongoDB ObjectId string from COUNTRIES list (NOT an array, NOT multiple countries)
 - For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
 - Detect country from language/currency/context
 - Use only options below:
@@ -493,14 +561,14 @@ IMPORTANT:
 CATEGORIES (choose the most appropriate one):
 ${PREDEFINED_CATEGORIES.join(', ')}
 
-COUNTRIES (use the ObjectId for destination_zone):
+COUNTRIES — destination_zone MUST be a single ObjectId string (pick the PRIMARY target country only):
 ${countryOptions}
 
 ACTIVITIES (choose the most relevant ones):
 ${activityNames.join(', ')}
 
 INDUSTRIES (choose the most relevant ones):
-${industriesData.map(ind => `${ind.name} (${ind.code})`).join(', ')}
+${industriesData.map(ind => `${this.getEntityLabel(ind)}${ind.code ? ` (${ind.code})` : ''}`).join(', ')}
 
 LANGUAGES (suggest relevant ones with proficiency levels A1-C2):
 ${languagesData.map(lang => `${lang.name} (${lang.iso639_1})`).join(', ')}
@@ -563,7 +631,7 @@ JSON format:
   "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
   "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
-  "destination_zone": "MONGODB_OBJECTID_FROM_COUNTRIES_LIST",
+  "destination_zone": "SINGLE_MONGODB_OBJECTID_STRING_FROM_COUNTRIES_LIST",
   "activities": ["activity1", "activity2"],
   "industries": ["industry1", "industry2"],
   "seniority": {
@@ -665,14 +733,15 @@ JSON format:
       try {
         const parsedResponse = this.parseOpenAIResponse(content);
 
-        // OpenAI doit retourner directement les ObjectIds MongoDB - pas de conversion nécessaire
-        console.log(`🔍 destination_zone reçu d'OpenAI: "${parsedResponse.destination_zone}"`);
-
-        // Valider que destination_zone est un ObjectId valide
-        if (parsedResponse.destination_zone && typeof parsedResponse.destination_zone === 'string' && parsedResponse.destination_zone.length === 24) {
-          console.log(`✅ destination_zone est un ObjectId valide: ${parsedResponse.destination_zone}`);
-        } else {
-          console.log(`⚠️ destination_zone n'est pas un ObjectId MongoDB valide: "${parsedResponse.destination_zone}"`);
+        const rawDestinationZone = parsedResponse.destination_zone;
+        parsedResponse.destination_zone = this.normalizeDestinationZone(
+          rawDestinationZone,
+          countriesData,
+          description
+        );
+        console.log(`🔍 destination_zone normalisé: ${parsedResponse.destination_zone || '(vide)'}`);
+        if (Array.isArray(rawDestinationZone)) {
+          console.log(`⚠️ OpenAI a renvoyé un tableau destination_zone — premier pays conservé`);
         }
 
         // Valider et corriger la catégorie
@@ -684,16 +753,20 @@ JSON format:
 
         // Convertir les activités en IDs
         if (parsedResponse.activities) {
-          parsedResponse.activities = parsedResponse.activities.map((activityName: string) =>
-            this.findActivityId(activityName, activitiesData)
-          );
+          parsedResponse.activities = parsedResponse.activities.map((activityName: any) => {
+            const existingId = this.extractMongoId(activityName);
+            if (existingId) return existingId;
+            return this.findActivityId(this.getEntityLabel(activityName), activitiesData);
+          });
         }
 
         // Convertir les industries en IDs
         if (parsedResponse.industries) {
-          parsedResponse.industries = parsedResponse.industries.map((industryName: string) =>
-            this.findIndustryId(industryName, industriesData)
-          );
+          parsedResponse.industries = parsedResponse.industries.map((industryName: any) => {
+            const existingId = this.extractMongoId(industryName);
+            if (existingId) return existingId;
+            return this.findIndustryId(this.getEntityLabel(industryName), industriesData);
+          });
         }
 
         // Convertir les langues en IDs
@@ -826,13 +899,10 @@ JSON format:
           parsedResponse.availability.time_zone = timezoneId;
 
           // Mettre à jour la currency basée sur la timezone
-          if (parsedResponse.commission) {
+          if (parsedResponse.commission && currenciesData && currenciesData.length > 0) {
             const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
-            if (currenciesData && currenciesData.length > 0) {
-              parsedResponse.commission.currency = this.findCurrencyId(currencyCode, currenciesData);
-            } else {
-              parsedResponse.commission.currency = currencyCode;
-            }
+            const currencyId = this.findCurrencyId(currencyCode, currenciesData);
+            parsedResponse.commission.currency = { $oid: currencyId };
           }
         }
 
@@ -1144,8 +1214,14 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    * Trouve l'ID d'une activité par son nom avec correspondance approximative
    */
   static findActivityId(activityName: string, activitiesList: any[]): string {
+    if (!activityName?.trim() || !activitiesList?.length) {
+      return activitiesList?.[0]?._id || 'unknown-activity-id';
+    }
+
+    const safeName = (a: any) => (typeof a?.name === 'string' ? a.name : '');
+
     // Recherche exacte d'abord
-    let activity = activitiesList.find(a => a.name.toLowerCase() === activityName.toLowerCase());
+    let activity = activitiesList.find(a => safeName(a).toLowerCase() === activityName.toLowerCase());
     if (activity) {
       return activity._id;
     }
@@ -1155,7 +1231,8 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     // Essayer de trouver une correspondance partielle
     activity = activitiesList.find(a => {
-      const normalizedActivityName = a.name.toLowerCase().trim();
+      const normalizedActivityName = safeName(a).toLowerCase().trim();
+      if (!normalizedActivityName) return false;
       return normalizedActivityName.includes(normalizedSearchName) ||
         normalizedSearchName.includes(normalizedActivityName);
     });
@@ -1180,7 +1257,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     const mappedName = manualMappings[normalizedSearchName];
     if (mappedName) {
-      activity = activitiesList.find(a => a.name.toLowerCase() === mappedName.toLowerCase());
+      activity = activitiesList.find(a => safeName(a).toLowerCase() === mappedName.toLowerCase());
       if (activity) {
         console.log(`🔄 Mapping manuel trouvé: "${activityName}" → "${activity.name}" (${activity._id})`);
         return activity._id;
@@ -1204,8 +1281,14 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    * Trouve l'ID d'une industrie par son nom avec correspondance approximative
    */
   static findIndustryId(industryName: string, industriesList: any[]): string {
+    if (!industryName?.trim() || !industriesList?.length) {
+      return industriesList?.[0]?._id || 'unknown-industry-id';
+    }
+
+    const safeName = (i: any) => (typeof i?.name === 'string' ? i.name : '');
+
     // Recherche exacte d'abord
-    let industry = industriesList.find(i => i.name.toLowerCase() === industryName.toLowerCase());
+    let industry = industriesList.find(i => safeName(i).toLowerCase() === industryName.toLowerCase());
     if (industry) {
       return industry._id;
     }
@@ -1215,7 +1298,8 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     // Essayer de trouver une correspondance partielle
     industry = industriesList.find(i => {
-      const normalizedIndustryName = i.name.toLowerCase().trim();
+      const normalizedIndustryName = safeName(i).toLowerCase().trim();
+      if (!normalizedIndustryName) return false;
       return normalizedIndustryName.includes(normalizedSearchName) ||
         normalizedSearchName.includes(normalizedIndustryName);
     });
@@ -1397,8 +1481,10 @@ Example response format: ["US", "CA", "UK", "DE"]`;
   static findTimezoneId(timezoneName: string, timezonesList: any[], context?: string): string {
     if (!timezonesList || timezonesList.length === 0) return timezoneName;
 
-    // Recherche exacte par zoneName
-    let timezone = timezonesList.find(tz => tz.zoneName === timezoneName);
+    const tzLabel = (tz: any) => tz.zoneName || tz.name || '';
+
+    // Recherche exacte par nom IANA (zoneName ou name depuis MongoDB)
+    let timezone = timezonesList.find(tz => tzLabel(tz) === timezoneName);
     if (timezone) return timezone._id;
 
     // Analyse contextuelle pour déterminer la région probable
@@ -1406,10 +1492,11 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     if (contextualMapping) return contextualMapping;
 
     // Recherche par nom de pays ou zone
-    timezone = timezonesList.find(tz =>
-      tz.countryName?.toLowerCase().includes(timezoneName.toLowerCase()) ||
-      tz.zoneName?.toLowerCase().includes(timezoneName.toLowerCase())
-    );
+    timezone = timezonesList.find(tz => {
+      const label = tzLabel(tz).toLowerCase();
+      return tz.countryName?.toLowerCase().includes(timezoneName.toLowerCase()) ||
+        label.includes(timezoneName.toLowerCase());
+    });
     if (timezone) return timezone._id;
 
     // Mapping des timezones communes
@@ -1425,14 +1512,14 @@ Example response format: ["US", "CA", "UK", "DE"]`;
 
     const mappedZone = timezoneMapping[timezoneName.toUpperCase()];
     if (mappedZone) {
-      timezone = timezonesList.find(tz => tz.zoneName === mappedZone);
+      timezone = timezonesList.find(tz => tzLabel(tz) === mappedZone);
       if (timezone) return timezone._id;
     }
 
     // Fallback intelligent basé sur le contexte
-    timezone = timezonesList.find(tz => tz.zoneName === 'Europe/Paris') || // France par défaut
-      timezonesList.find(tz => tz.zoneName === 'UTC') ||
-      timezonesList.find(tz => tz.zoneName.includes('UTC')) ||
+    timezone = timezonesList.find(tz => tzLabel(tz) === 'Europe/Paris') ||
+      timezonesList.find(tz => tzLabel(tz) === 'UTC') ||
+      timezonesList.find(tz => tzLabel(tz).includes('UTC')) ||
       timezonesList[0];
 
     return timezone ? timezone._id : timezoneName;
