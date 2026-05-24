@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 // Configuration sécurisée d'OpenAI côté backend - initialisation conditionnelle
 let openai: OpenAI | null = null;
+let anthropic: Anthropic | null = null;
 
 const getOpenAIClient = (): OpenAI => {
   if (!openai) {
@@ -14,6 +16,112 @@ const getOpenAIClient = (): OpenAI => {
   }
   return openai;
 };
+
+const getAnthropicClient = (): Anthropic | null => {
+  if (anthropic) return anthropic;
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  anthropic = new Anthropic({ apiKey: key });
+  return anthropic;
+};
+
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
+
+/** Detect transient/failure errors where fallback to Claude makes sense */
+function shouldFallbackToClaude(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as any;
+  const status: number | undefined = e?.status || e?.response?.status;
+  const code: string | undefined = e?.code || e?.error?.code;
+  const message: string = String(e?.message || e?.error?.message || '').toLowerCase();
+
+  if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) return true;
+  if (code && ['rate_limit_exceeded', 'insufficient_quota', 'server_error', 'service_unavailable', 'overloaded'].includes(code)) return true;
+  if (
+    message.includes('rate limit') ||
+    message.includes('overloaded') ||
+    message.includes('temporarily unavailable') ||
+    message.includes('connection error') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('socket hang up')
+  ) return true;
+  return false;
+}
+
+interface LLMResult { content: string; provider: 'openai' | 'anthropic' }
+
+interface LLMChatOptions {
+  systemPrompt: string;
+  userPrompt: string;
+  openaiModel: string;
+  temperature?: number;
+  maxTokens?: number;
+  forceJson?: boolean;
+}
+
+/**
+ * Single entry point for OpenAI calls with automatic Anthropic Claude fallback
+ * if OpenAI fails (rate limits, downtime, server errors).
+ */
+async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
+  const {
+    systemPrompt,
+    userPrompt,
+    openaiModel,
+    temperature = 0.7,
+    maxTokens = 2000,
+    forceJson = false,
+  } = opts;
+
+  try {
+    console.log(`🤖 Appel OpenAI (${openaiModel}) en cours...`);
+    const completion = await getOpenAIClient().chat.completions.create({
+      model: openaiModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      ...(forceJson ? { response_format: { type: 'json_object' as const } } : {}),
+    });
+    console.log('✅ Réponse OpenAI reçue');
+    const content = completion.choices[0]?.message?.content;
+    if (!content) throw new Error('No content received from OpenAI');
+    return { content, provider: 'openai' };
+  } catch (openaiError) {
+    const fallback = shouldFallbackToClaude(openaiError);
+    console.error(`❌ Erreur OpenAI (fallback Claude = ${fallback}):`, (openaiError as any)?.message || openaiError);
+
+    if (!fallback) throw openaiError;
+
+    const claude = getAnthropicClient();
+    if (!claude) {
+      console.error('⚠️ ANTHROPIC_API_KEY non configurée — impossible de basculer vers Claude');
+      throw openaiError;
+    }
+
+    console.log(`🤖 Fallback vers Anthropic Claude (${ANTHROPIC_MODEL})...`);
+    const claudeSystem = forceJson
+      ? `${systemPrompt}\n\nIMPORTANT: Respond with VALID JSON ONLY, no markdown, no commentary.`
+      : systemPrompt;
+
+    const response = await claude.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      temperature,
+      system: claudeSystem,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    console.log('✅ Réponse Claude reçue');
+    const textBlock = response.content.find((b: any) => b.type === 'text') as any;
+    const content = textBlock?.text || '';
+    if (!content) throw new Error('No content received from Claude fallback');
+    return { content, provider: 'anthropic' };
+  }
+}
 
 export interface GigSuggestion {
   title: string;
@@ -779,29 +887,15 @@ JSON format:
 }`;
 
     return retryWithBackoff(async () => {
-      console.log('🤖 Appel OpenAI en cours...');
-
-      const completion = await getOpenAIClient().chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant that creates comprehensive gig listings. IMPORTANT: All responses MUST be in English only. Return only valid JSON.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
+      const { content } = await callLLMWithFallback({
+        systemPrompt:
+          'You are a helpful assistant that creates comprehensive gig listings. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
+        userPrompt: prompt,
+        openaiModel: 'gpt-4',
         temperature: 0.7,
-        max_tokens: 2000
+        maxTokens: 2000,
+        forceJson: true,
       });
-
-      console.log('✅ Réponse OpenAI reçue');
-      const content = completion.choices[0].message.content;
-      if (!content) {
-        throw new Error('No content received from OpenAI');
-      }
 
       try {
         const parsedResponse = this.parseOpenAIResponse(content);
@@ -1072,26 +1166,15 @@ Return JSON in this exact format:
 }`;
 
     return retryWithBackoff(async () => {
-      const completion = await getOpenAIClient().chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant that suggests relevant skills for job positions. IMPORTANT: All responses MUST be in English only. Return only valid JSON.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
+      const { content } = await callLLMWithFallback({
+        systemPrompt:
+          'You are a helpful assistant that suggests relevant skills for job positions. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
+        userPrompt: prompt,
+        openaiModel: 'gpt-4',
         temperature: 0.7,
-        max_tokens: 1000
+        maxTokens: 1000,
+        forceJson: true,
       });
-
-      const content = completion.choices[0].message.content;
-      if (!content) {
-        throw new Error('No content received from OpenAI');
-      }
 
       try {
         const parsedResponse = this.parseOpenAIResponse(content);
@@ -1170,33 +1253,22 @@ Format your response as a JSON object with the following structure:
 }`;
 
     return retryWithBackoff(async () => {
-      const completion = await getOpenAIClient().chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. IMPORTANT: All responses MUST be in English only.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
+      const { content } = await callLLMWithFallback({
+        systemPrompt:
+          'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. IMPORTANT: All responses MUST be in English only.',
+        userPrompt: prompt,
+        openaiModel: 'gpt-4',
         temperature: 0.7,
-        max_tokens: 500
+        maxTokens: 500,
+        forceJson: true,
       });
-
-      const content = completion.choices[0].message.content;
-      if (!content) {
-        throw new Error('No content received from OpenAI');
-      }
 
       try {
         return this.parseOpenAIResponse(content);
       } catch (error) {
-        console.error('Error parsing OpenAI response:', error);
+        console.error('Error parsing AI response:', error);
         console.error('Raw response:', content);
-        throw new Error('Invalid response format from OpenAI');
+        throw new Error('Invalid response format from AI');
       }
     });
   }
@@ -1218,33 +1290,22 @@ Description: ${description}
 Example response format: ["US", "CA", "UK", "DE"]`;
 
     return retryWithBackoff(async () => {
-      const completion = await getOpenAIClient().chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. IMPORTANT: All responses MUST be in English only."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
+      const { content } = await callLLMWithFallback({
+        systemPrompt:
+          'You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. IMPORTANT: All responses MUST be in English only.',
+        userPrompt: prompt,
+        openaiModel: 'gpt-3.5-turbo',
         temperature: 0.7,
-        max_tokens: 100,
+        maxTokens: 200,
+        forceJson: true,
       });
-
-      const content = completion.choices[0].message.content;
-      if (!content) {
-        throw new Error('No content received from OpenAI');
-      }
 
       try {
         return this.parseOpenAIResponse(content);
       } catch (error) {
-        console.error('Error parsing OpenAI response:', error);
+        console.error('Error parsing AI response:', error);
         console.error('Raw response:', content);
-        throw new Error('Invalid response format from OpenAI');
+        throw new Error('Invalid response format from AI');
       }
     });
   }
