@@ -25,7 +25,20 @@ const getAnthropicClient = (): Anthropic | null => {
   return anthropic;
 };
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
+/** Valid Anthropic model IDs (try in order if one returns 404) */
+const ANTHROPIC_MODEL_CANDIDATES = [
+  process.env.ANTHROPIC_MODEL,
+  'claude-sonnet-4-20250514',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-haiku-20240307',
+].filter((m): m is string => !!m && m.trim().length > 0);
+
+function isAnthropicModelNotFound(err: unknown): boolean {
+  const e = err as any;
+  const status = e?.status ?? e?.response?.status;
+  const msg = String(e?.message || e?.error?.message || '').toLowerCase();
+  return status === 404 || msg.includes('not_found') || msg.includes('model:');
+}
 
 /** Detect transient/failure errors where fallback to Claude makes sense */
 function shouldFallbackToClaude(err: unknown): boolean {
@@ -102,24 +115,39 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
       throw openaiError;
     }
 
-    console.log(`🤖 Fallback vers Anthropic Claude (${ANTHROPIC_MODEL})...`);
     const claudeSystem = forceJson
       ? `${systemPrompt}\n\nIMPORTANT: Respond with VALID JSON ONLY, no markdown, no commentary.`
       : systemPrompt;
 
-    const response = await claude.messages.create({
-      model: ANTHROPIC_MODEL,
-      max_tokens: maxTokens,
-      temperature,
-      system: claudeSystem,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+    let lastClaudeError: unknown = openaiError;
+    for (const modelId of ANTHROPIC_MODEL_CANDIDATES) {
+      try {
+        console.log(`🤖 Fallback vers Anthropic Claude (${modelId})...`);
+        const response = await claude.messages.create({
+          model: modelId,
+          max_tokens: maxTokens,
+          temperature,
+          system: claudeSystem,
+          messages: [{ role: 'user', content: userPrompt }],
+        });
 
-    console.log('✅ Réponse Claude reçue');
-    const textBlock = response.content.find((b: any) => b.type === 'text') as any;
-    const content = textBlock?.text || '';
-    if (!content) throw new Error('No content received from Claude fallback');
-    return { content, provider: 'anthropic' };
+        console.log(`✅ Réponse Claude reçue (${modelId})`);
+        const textBlock = response.content.find((b: any) => b.type === 'text') as any;
+        const content = textBlock?.text || '';
+        if (!content) throw new Error('No content received from Claude fallback');
+        return { content, provider: 'anthropic' };
+      } catch (claudeErr) {
+        lastClaudeError = claudeErr;
+        if (isAnthropicModelNotFound(claudeErr)) {
+          console.warn(`⚠️ Modèle Claude introuvable (${modelId}), essai suivant...`);
+          continue;
+        }
+        throw claudeErr;
+      }
+    }
+
+    console.error('❌ Tous les modèles Claude ont échoué:', (lastClaudeError as any)?.message || lastClaudeError);
+    throw lastClaudeError;
   }
 }
 
