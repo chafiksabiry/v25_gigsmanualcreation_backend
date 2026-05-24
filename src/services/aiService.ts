@@ -144,6 +144,78 @@ export class AIService {
     return String(entity.code || '');
   }
 
+  /** Primary IANA timezone per country (cca2 → zone name) */
+  private static readonly COUNTRY_TIMEZONE_MAP: Record<string, string> = {
+    FR: 'Europe/Paris',
+    BE: 'Europe/Brussels',
+    CH: 'Europe/Zurich',
+    DE: 'Europe/Berlin',
+    ES: 'Europe/Madrid',
+    IT: 'Europe/Rome',
+    NL: 'Europe/Amsterdam',
+    LU: 'Europe/Luxembourg',
+    PT: 'Europe/Lisbon',
+    GB: 'Europe/London',
+    UK: 'Europe/London',
+    IE: 'Europe/Dublin',
+    SE: 'Europe/Stockholm',
+    NO: 'Europe/Oslo',
+    DK: 'Europe/Copenhagen',
+    FI: 'Europe/Helsinki',
+    PL: 'Europe/Warsaw',
+    AT: 'Europe/Vienna',
+    CZ: 'Europe/Prague',
+    GR: 'Europe/Athens',
+    RO: 'Europe/Bucharest',
+    HU: 'Europe/Budapest',
+    MA: 'Africa/Casablanca',
+    DZ: 'Africa/Algiers',
+    TN: 'Africa/Tunis',
+    EG: 'Africa/Cairo',
+    SN: 'Africa/Dakar',
+    CI: 'Africa/Abidjan',
+    NG: 'Africa/Lagos',
+    KE: 'Africa/Nairobi',
+    ZA: 'Africa/Johannesburg',
+    US: 'America/New_York',
+    CA: 'America/Toronto',
+    MX: 'America/Mexico_City',
+    BR: 'America/Sao_Paulo',
+    AR: 'America/Argentina/Buenos_Aires',
+    AU: 'Australia/Sydney',
+    NZ: 'Pacific/Auckland',
+    JP: 'Asia/Tokyo',
+    CN: 'Asia/Shanghai',
+    IN: 'Asia/Kolkata',
+    SG: 'Asia/Singapore',
+    AE: 'Asia/Dubai',
+    SA: 'Asia/Riyadh',
+    TR: 'Europe/Istanbul',
+    RU: 'Europe/Moscow',
+  };
+
+  /** Pick the timezone that matches a country's primary IANA zone */
+  private static findTimezoneForCountry(
+    countryDoc: any,
+    timezonesList: any[] | undefined
+  ): string | null {
+    if (!countryDoc || !timezonesList?.length) return null;
+    const cca2 = String(countryDoc?.cca2 || '').toUpperCase();
+    const zone = this.COUNTRY_TIMEZONE_MAP[cca2];
+    if (!zone) return null;
+
+    const match = timezonesList.find((tz) => {
+      const label = tz?.name || tz?.zoneName || '';
+      return label === zone;
+    });
+    return match ? String(match._id) : null;
+  }
+
+  private static getCountryById(countriesData: any[] | undefined, countryId: string): any | null {
+    if (!countriesData?.length || !countryId) return null;
+    return countriesData.find((c) => String(c?._id) === countryId) || null;
+  }
+
   private static normalizeDestinationZone(
     rawValue: unknown,
     countriesData: any[] | undefined,
@@ -554,6 +626,7 @@ export class AIService {
 IMPORTANT: 
 - Respond in the SAME LANGUAGE as input
 - For destination_zone, use EXACTLY ONE MongoDB ObjectId string from COUNTRIES list (NOT an array, NOT multiple countries)
+- availability.time_zone MUST be the primary IANA timezone of the destination_zone country (France → Europe/Paris, Morocco → Africa/Casablanca, Belgium → Europe/Brussels, Canada → America/Toronto, USA → America/New_York, UK → Europe/London, Germany → Europe/Berlin, Spain → Europe/Madrid, Italy → Europe/Rome). NEVER mix a country with the timezone of a different one.
 - For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
 - Detect country from language/currency/context
 - Use only options below:
@@ -880,27 +953,48 @@ JSON format:
         // Convertir les timezones en IDs avec contexte intelligent
         const timezoneContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
 
+        // STEP 1: Determine the timezone that MUST be used = primary TZ of destination_zone country
+        const destinationCountry = this.getCountryById(countriesData, parsedResponse.destination_zone);
+        const destinationCountryName = destinationCountry ? this.getCountryCommonName(destinationCountry) : '';
+        const destinationCca2 = destinationCountry?.cca2 || '';
+        const enforcedTimezoneId = this.findTimezoneForCountry(destinationCountry, timezonesData);
+        const enforcedTimezoneName = destinationCca2
+          ? this.COUNTRY_TIMEZONE_MAP[String(destinationCca2).toUpperCase()] || ''
+          : '';
+
+        if (enforcedTimezoneId) {
+          console.log(`🕒 TIMEZONE ENFORCED from destination "${destinationCountryName}" (${destinationCca2}) → ${enforcedTimezoneName} (${enforcedTimezoneId})`);
+        } else if (destinationCountryName) {
+          console.warn(`⚠️ Aucune timezone enregistrée pour le pays "${destinationCountryName}" (${destinationCca2})`);
+        }
+
         // Gérer l'ancien format (schedule.schedules) pour rétrocompatibilité
         if (parsedResponse.schedule?.schedules && timezonesData) {
           parsedResponse.schedule.schedules = parsedResponse.schedule.schedules.map((schedule: any) => ({
             ...schedule,
-            timezone: this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, timezoneContext)
+            timezone:
+              enforcedTimezoneId ||
+              this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, timezoneContext),
           }));
         }
 
         // Gérer le nouveau format (availability.time_zone)
-        if (parsedResponse.availability?.time_zone && timezonesData) {
+        if (parsedResponse.availability && timezonesData) {
           const originalTimezoneName = parsedResponse.availability.time_zone;
-          const timezoneId = this.findTimezoneId(
-            originalTimezoneName,
-            timezonesData,
-            timezoneContext
-          );
-          parsedResponse.availability.time_zone = timezoneId;
+          const timezoneId =
+            enforcedTimezoneId ||
+            (originalTimezoneName
+              ? this.findTimezoneId(originalTimezoneName, timezonesData, timezoneContext)
+              : null);
 
-          // Mettre à jour la currency basée sur la timezone
-          if (parsedResponse.commission && currenciesData && currenciesData.length > 0) {
-            const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
+          if (timezoneId) {
+            parsedResponse.availability.time_zone = timezoneId;
+          }
+
+          // Mettre à jour la currency en se basant sur le NOM IANA de la timezone forcée
+          const tzNameForCurrency = enforcedTimezoneName || originalTimezoneName || '';
+          if (parsedResponse.commission && currenciesData && currenciesData.length > 0 && tzNameForCurrency) {
+            const currencyCode = this.getCurrencyFromTimezone(tzNameForCurrency);
             const currencyId = this.findCurrencyId(currencyCode, currenciesData);
             parsedResponse.commission.currency = { $oid: currencyId };
           }
