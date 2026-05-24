@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { Country } from '../models/countryModel';
+import { Currency } from '../models/currencyModel';
 import { AIService } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 
 // Configuration de l'API externe
 const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://v25gigsmanualcreationbackend-production.up.railway.app/api/currencies';
 
 // Fonctions pour récupérer les données depuis l'API externe
 async function fetchActivities() {
@@ -68,33 +68,37 @@ async function fetchSkills() {
 
 async function fetchCurrencies() {
   try {
-    console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 500000); // 5 seconds timeout
+    console.log(`🔍 Reading currencies directly from MongoDB collection "currencies"`);
 
-    const response = await fetch(CURRENCIES_API_URL, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const data = await response.json() as any;
+    const docs = await Currency.find({ isActive: true })
+      .select({ code: 1, name: 1, symbol: 1, isActive: 1 })
+      .lean();
 
-    if (data.success && data.data && data.data.length > 0) {
-      console.log(`✅ ${data.data.length} currencies fetched successfully`);
-      if (process.env.NODE_ENV !== 'production' && data.data.length > 0) {
-        // Debug log only in non-prod or if needed
-        console.log('Sample currency:', JSON.stringify(data.data[0], null, 2));
+    const currencies = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      code: doc.code,
+      name: doc.name,
+      symbol: doc.symbol,
+      isActive: doc.isActive,
+    }));
+
+    if (currencies.length > 0) {
+      console.log(`✅ ${currencies.length} currencies loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample currency:', JSON.stringify(currencies[0], null, 2));
       }
-      return data.data.filter((currency: any) => currency.isActive);
-    } else {
-      console.error('Error or empty response from currencies API:', data);
-      throw new Error('Empty currency list');
+      return currencies;
     }
+
+    console.warn('⚠️ Collection "currencies" is empty');
+    throw new Error('Empty currency collection');
   } catch (error) {
-    console.error('Error fetching currencies:', error);
+    console.error('Error reading currencies from MongoDB:', error);
     console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
 
-    // Fallback hardcoded currencies with REAL IDs from production
     return [
       {
-        "_id": "eur-id-placeholder", // Will be matched by code if needed
+        "_id": "eur-id-placeholder",
         "code": "EUR",
         "name": "Euro",
         "symbol": "€",

@@ -440,7 +440,30 @@ export class AIService {
     const softSkillNames = skillsData.soft.slice(0, 10).map(skill => skill.name); // Limiter à 10
     const professionalSkillNames = skillsData.professional.slice(0, 10).map(skill => skill.name); // Limiter à 10
     const technicalSkillNames = skillsData.technical.slice(0, 10).map(skill => skill.name); // Limiter à 10
-    const currencyOptions = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}: ${currency._id}`).join(', ') : [];
+    // Prioriser EUR, USD, GBP en tête de liste pour aider l'IA
+    const priorityCurrencyCodes = ['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'MAD'];
+    const sortedCurrencies = currenciesData
+      ? [...currenciesData].sort((a: any, b: any) => {
+          const aPriority = priorityCurrencyCodes.indexOf(a.code);
+          const bPriority = priorityCurrencyCodes.indexOf(b.code);
+          if (aPriority !== -1 && bPriority === -1) return -1;
+          if (aPriority === -1 && bPriority !== -1) return 1;
+          if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+          return (a.code || '').localeCompare(b.code || '');
+        })
+      : [];
+
+    // Inclure toutes les currencies disponibles (limité à 25 pour éviter dépassement de tokens)
+    const currencyOptions = sortedCurrencies
+      .slice(0, 25)
+      .map((currency: any) => `${currency.code} (${currency.name}, ${currency.symbol}): ${currency._id}`)
+      .join('\n');
+
+    if (sortedCurrencies.length === 0) {
+      console.warn('⚠️ Aucune devise disponible pour OpenAI - currency sera défaillant');
+    } else {
+      console.log(`💰 ${sortedCurrencies.length} devises envoyées au prompt (top: ${sortedCurrencies.slice(0, 3).map((c: any) => c.code).join(', ')})`);
+    }
 
     // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
     const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
@@ -491,7 +514,10 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
-CURRENCIES (use the ObjectId):
+CURRENCIES — STRICT RULE (use the EXACT MongoDB ObjectId, never the code):
+The "commission.currency" field MUST be filled with the ObjectId shown after the colon below.
+NEVER return the currency code (like "EUR" or "USD") as the value — always the ObjectId.
+If you cannot determine a currency from the context, default to EUR.
 ${currencyOptions}
 
 TEAM ROLES (choose the most appropriate ones from this list):

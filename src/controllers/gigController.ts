@@ -136,10 +136,33 @@ export class GigController {
         });
       }
 
-      // Si on active le gig, vérifier le solde de la company
+      // Si on active le gig, vérifier le solde de la company + setupSteps
       if (updateData.status === 'active') {
         try {
           const existingGig = await GigService.getGigById(id);
+          if (existingGig) {
+            const REQUIRED_SETUP_KEYS = [
+              'telephony',
+              'uploadContacts',
+              'callScript',
+              'knowledgeBase',
+              'repOnboarding',
+              'sessionPlanning',
+            ] as const;
+            const steps = (existingGig as any).setupSteps || {};
+            const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
+            if (missingSteps.length > 0) {
+              console.log(
+                `❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`,
+                missingSteps.join(', ')
+              );
+              return res.status(400).json({
+                message:
+                  'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
+                data: { missingSteps },
+              });
+            }
+          }
           if (existingGig && existingGig.companyId) {
             const companyId = existingGig.companyId._id || existingGig.companyId;
             const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL || 'https://v25comporchestratorback-production.up.railway.app';
