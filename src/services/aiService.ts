@@ -330,21 +330,43 @@ export class AIService {
     RU: 'Europe/Moscow',
   };
 
-  /** Pick the timezone that matches a country's primary IANA zone */
+  /** Pick the timezone whose document matches the country (by countryCode or by IANA zone). */
   private static findTimezoneForCountry(
     countryDoc: any,
     timezonesList: any[] | undefined
-  ): string | null {
+  ): { id: string; zoneName: string } | null {
     if (!countryDoc || !timezonesList?.length) return null;
     const cca2 = String(countryDoc?.cca2 || '').toUpperCase();
-    const zone = this.COUNTRY_TIMEZONE_MAP[cca2];
-    if (!zone) return null;
+    const ianaZone = this.COUNTRY_TIMEZONE_MAP[cca2];
 
-    const match = timezonesList.find((tz) => {
-      const label = tz?.name || tz?.zoneName || '';
-      return label === zone;
-    });
-    return match ? String(match._id) : null;
+    // 1) First try: a timezone document whose countryCode matches AND whose zoneName equals the primary IANA zone
+    if (ianaZone) {
+      const exact = timezonesList.find((tz) => {
+        const tzCountry = String(tz?.countryCode || '').toUpperCase();
+        const zone = tz?.zoneName || tz?.name || '';
+        return tzCountry === cca2 && zone === ianaZone;
+      });
+      if (exact) return { id: String(exact._id), zoneName: exact.zoneName || exact.name || ianaZone };
+    }
+
+    // 2) Fallback: any timezone document for that country (most countries have only one main zone here)
+    if (cca2) {
+      const byCountry = timezonesList.find((tz) => String(tz?.countryCode || '').toUpperCase() === cca2);
+      if (byCountry) {
+        return {
+          id: String(byCountry._id),
+          zoneName: byCountry.zoneName || byCountry.name || ianaZone || '',
+        };
+      }
+    }
+
+    // 3) Fallback: a document whose zoneName matches the IANA zone (whatever countryCode)
+    if (ianaZone) {
+      const byZone = timezonesList.find((tz) => (tz?.zoneName || tz?.name) === ianaZone);
+      if (byZone) return { id: String(byZone._id), zoneName: ianaZone };
+    }
+
+    return null;
   }
 
   private static getCountryById(countriesData: any[] | undefined, countryId: string): any | null {
@@ -1079,15 +1101,16 @@ JSON format:
         const destinationCountry = this.getCountryById(countriesData, parsedResponse.destination_zone);
         const destinationCountryName = destinationCountry ? this.getCountryCommonName(destinationCountry) : '';
         const destinationCca2 = destinationCountry?.cca2 || '';
-        const enforcedTimezoneId = this.findTimezoneForCountry(destinationCountry, timezonesData);
-        const enforcedTimezoneName = destinationCca2
-          ? this.COUNTRY_TIMEZONE_MAP[String(destinationCca2).toUpperCase()] || ''
-          : '';
+        const enforcedTimezone = this.findTimezoneForCountry(destinationCountry, timezonesData);
+        const enforcedTimezoneId = enforcedTimezone?.id || null;
+        const enforcedTimezoneName =
+          enforcedTimezone?.zoneName ||
+          (destinationCca2 ? this.COUNTRY_TIMEZONE_MAP[String(destinationCca2).toUpperCase()] || '' : '');
 
         if (enforcedTimezoneId) {
           console.log(`🕒 TIMEZONE ENFORCED from destination "${destinationCountryName}" (${destinationCca2}) → ${enforcedTimezoneName} (${enforcedTimezoneId})`);
         } else if (destinationCountryName) {
-          console.warn(`⚠️ Aucune timezone enregistrée pour le pays "${destinationCountryName}" (${destinationCca2})`);
+          console.warn(`⚠️ Aucune timezone trouvée pour le pays "${destinationCountryName}" (${destinationCca2})`);
         }
 
         // Gérer l'ancien format (schedule.schedules) pour rétrocompatibilité
