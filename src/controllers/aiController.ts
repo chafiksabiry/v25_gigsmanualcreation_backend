@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Country } from '../models/countryModel';
 import { Currency } from '../models/currencyModel';
+import { Timezone } from '../models/timezoneModel';
 import { AIService } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 

@@ -529,8 +529,32 @@ RULES:
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 - team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
-- minimumVolume is a QUANTITY (e.g. number of calls). EXTRACT the exact number from text if stated (e.g. "17 calls or more" -> amount: "17"). Defaults to "30" ONLY if not specified.
-- If a bonus is mentioned for a specific volume (e.g. "bonus if > 17 calls"), set minimumVolume.amount to that number ("17") and put the bonus amount in bonusAmount.
+
+COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
+- "commission_per_call" = AMOUNT (number, in the selected currency) PAID TO THE AGENT FOR EACH SUCCESSFUL CALL THEY PERFORM.
+  • Extract a real number if mentioned (e.g. "5€ par appel" → 5). 
+  • DEFAULT = 2 if nothing is said.
+- "transactionCommission" = AMOUNT (number) PAID TO THE AGENT FOR EACH CLOSED/COMPLETED TRANSACTION (e.g. a sale, a signed contract). Different from commission_per_call.
+  • Extract real number if mentioned (e.g. "50€ par vente" → 50).
+  • DEFAULT = 25 if nothing is said.
+- "bonusAmount" = BONUS AMOUNT (number) PAID WHEN THE AGENT REACHES A MINIMUM VOLUME OF CALLS over a period.
+  • Extract real number if mentioned (e.g. "bonus de 200€" → 200).
+  • DEFAULT = 100 if nothing is said.
+- "minimumVolume" describes THE NUMBER OF CALLS REQUIRED TO TRIGGER THE BONUS, OVER A PERIOD.
+  • "amount" = number of calls to reach (as a string). Extract from text (e.g. "100 calls/month" → "100"). DEFAULT = "50".
+  • "period" = "Daily" | "Weekly" | "Monthly". Detect from context. DEFAULT = "Monthly".
+  • "unit" = "Calls" | "Transactions". Choose what's mentioned. DEFAULT = "Calls".
+- "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }. DEFAULT = EUR ObjectId.
+- "additionalDetails" = short paragraph (2-3 sentences) summarising payment frequency (weekly/monthly), how the bonus triggers, and any special clauses. SAME LANGUAGE AS INPUT.
+
+EXAMPLES:
+- "Pay 5€ per call + 50€ per sale, bonus 200€ if 100 calls per month" →
+  commission_per_call: 5, transactionCommission: 50, bonusAmount: 200,
+  minimumVolume: { amount: "100", period: "Monthly", unit: "Calls" }
+- "10$ per call, 5 calls per day bonus 30$" →
+  commission_per_call: 10, transactionCommission: 25 (default), bonusAmount: 30,
+  minimumVolume: { amount: "5", period: "Daily", unit: "Calls" }
+- Nothing specified about commission → use ALL defaults above.
 
 JSON format:
 {
@@ -584,18 +608,18 @@ JSON format:
     }
   },
     "commission": {
-    "commission_per_call": 0,
-    "bonusAmount": 150,
+    "commission_per_call": 2,
+    "transactionCommission": 25,
+    "bonusAmount": 100,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
     "minimumVolume": {
-      "amount": "25",
+      "amount": "50",
       "period": "Monthly",
       "unit": "Calls"
     },
-    "transactionCommission": 50,
-    "additionalDetails": "A comprehensive and detailed explanation of the compensation structure (at least 2-3 sentences). Include payment frequency (e.g., weekly/monthly), specific conditions for the bonus, and any other relevant financial terms. Respond in the SAME LANGUAGE as the user query."
+    "additionalDetails": "Comprehensive 2-3 sentence summary in the SAME LANGUAGE as input: include per-call pay, per-transaction commission, bonus trigger (X calls per day/week/month) and payment frequency (weekly/monthly)."
   },
   "team": {
     "size": 1,
@@ -739,30 +763,38 @@ JSON format:
             parsedResponse.commission.currency = { $oid: defaultCurrencyId };
           }
 
-          // 2. Strict type enforcement for other commission fields
-          // transactionCommission must be a number
-          const rawTransComm = parsedResponse.commission.transactionCommission;
-          parsedResponse.commission.transactionCommission =
-            typeof rawTransComm === 'string' ? (parseFloat(rawTransComm) || 0) : (rawTransComm || 0);
+          // 2. Strict type enforcement + defaults for commission fields
+          // Defaults (used only when AI returned 0/null/missing):
+          //   commission_per_call: 2   (per successful call)
+          //   transactionCommission: 25 (per closed transaction)
+          //   bonusAmount: 100         (bonus when minimumVolume reached)
+          //   minimumVolume: 50 Calls / Monthly
 
-          // bonusAmount must be a number
-          const rawBonus = parsedResponse.commission.bonusAmount;
-          parsedResponse.commission.bonusAmount = typeof rawBonus === 'string' ? (parseFloat(rawBonus) || 0) : (rawBonus || 0);
+          const toNumber = (val: any): number =>
+            typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
 
-          // commission_per_call must be a number (handling potential AI inconsistencies)
-          const rawCommPerCall = parsedResponse.commission.commission_per_call || parsedResponse.commission.commissionPerCall;
-          parsedResponse.commission.commission_per_call = typeof rawCommPerCall === 'string' ? (parseFloat(rawCommPerCall) || 0) : (rawCommPerCall || 0);
-          // Remove camelCase duplicate if present to ensure clean output
+          const parsedPerCall = toNumber(
+            parsedResponse.commission.commission_per_call ?? parsedResponse.commission.commissionPerCall
+          );
+          parsedResponse.commission.commission_per_call = parsedPerCall > 0 ? parsedPerCall : 2;
           delete parsedResponse.commission.commissionPerCall;
 
-          // minimumVolume must ensure inner fields are strings where expected
+          const parsedTransComm = toNumber(parsedResponse.commission.transactionCommission);
+          parsedResponse.commission.transactionCommission = parsedTransComm > 0 ? parsedTransComm : 25;
+
+          const parsedBonus = toNumber(parsedResponse.commission.bonusAmount);
+          parsedResponse.commission.bonusAmount = parsedBonus > 0 ? parsedBonus : 100;
+
+          // minimumVolume — with defaults
           if (parsedResponse.commission.minimumVolume) {
-            parsedResponse.commission.minimumVolume.amount = String(parsedResponse.commission.minimumVolume.amount || "0");
+            const amtRaw = parsedResponse.commission.minimumVolume.amount;
+            const amtNum = toNumber(amtRaw);
+            parsedResponse.commission.minimumVolume.amount = amtNum > 0 ? String(amtNum) : "50";
             parsedResponse.commission.minimumVolume.unit = parsedResponse.commission.minimumVolume.unit || "Calls";
             parsedResponse.commission.minimumVolume.period = parsedResponse.commission.minimumVolume.period || "Monthly";
           } else {
             parsedResponse.commission.minimumVolume = {
-              amount: "0",
+              amount: "50",
               period: "Monthly",
               unit: "Calls"
             };
