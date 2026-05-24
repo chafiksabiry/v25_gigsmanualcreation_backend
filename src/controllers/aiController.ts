@@ -125,42 +125,64 @@ async function fetchCurrencies() {
 
 async function fetchTimezones() {
   try {
-    const response = await fetch(`${EXTERNAL_API_BASE}/timezones`);
-    const data = await response.json() as any;
-    return data.success ? data.data : [];
+    console.log(`🔍 Reading timezones directly from MongoDB collection "timezones"`);
+
+    const docs = await Timezone.find({})
+      .select({ name: 1, offset: 1, abbreviation: 1, description: 1 })
+      .lean();
+
+    const timezones = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      name: doc.name,
+      offset: doc.offset,
+      abbreviation: doc.abbreviation,
+      description: doc.description || '',
+    }));
+
+    if (timezones.length > 0) {
+      console.log(`✅ ${timezones.length} timezones loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample timezone:', JSON.stringify(timezones[0], null, 2));
+      }
+      return timezones;
+    }
+
+    console.warn('⚠️ Collection "timezones" is empty');
+    return [];
   } catch (error) {
-    console.error('Error fetching timezones:', error);
+    console.error('Error reading timezones from MongoDB:', error);
     return [];
   }
 }
 
-// Fonction pour récupérer les pays depuis l'API externe
 async function fetchCountries() {
   try {
-    const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
-    console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
+    console.log(`🔍 Reading countries directly from MongoDB collection "countries"`);
 
-    const response = await fetch(countriesApiUrl);
-    const data = await response.json() as any;
+    const docs = await Country.find({})
+      .select({ name: 1, cca2: 1, flags: 1 })
+      .lean();
 
-    if (data.success && data.data) {
-      console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
-      return data.data;
-    } else {
-      console.error('Erreur réponse API countries:', data);
-      return [];
+    const countries = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      name: doc.name,
+      cca2: doc.cca2,
+      flags: doc.flags || {},
+    }));
+
+    if (countries.length > 0) {
+      console.log(`✅ ${countries.length} countries loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample country:', JSON.stringify({ _id: countries[0]._id, name: countries[0].name, cca2: countries[0].cca2 }, null, 2));
+      }
+      return countries;
     }
+
+    console.warn('⚠️ Collection "countries" is empty');
+    return [];
   } catch (error) {
-    console.error('Error fetching countries from API:', error);
-    // Fallback vers notre base de données locale en cas d'erreur
-    try {
-      const countries = await Country.find({}, { name: 1, cca2: 1, flags: 1 }).lean();
-      console.log(`⚠️  Fallback: ${countries.length} pays récupérés depuis MongoDB`);
-      return countries || [];
-    } catch (dbError) {
-      console.error('Error fallback database:', dbError);
-      return [];
-    }
+    console.error('Error reading countries from MongoDB:', error);
+    return [];
   }
 }
 
