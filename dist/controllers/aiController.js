@@ -2,11 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIController = void 0;
 const countryModel_1 = require("../models/countryModel");
+const currencyModel_1 = require("../models/currencyModel");
+const timezoneModel_1 = require("../models/timezoneModel");
 const aiService_1 = require("../services/aiService");
 const populateService_1 = require("../services/populateService");
 // Configuration de l'API externe
 const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://v25gigsmanualcreationbackend-production.up.railway.app/api/currencies';
 // Fonctions pour récupérer les données depuis l'API externe
 async function fetchActivities() {
     try {
@@ -66,32 +67,33 @@ async function fetchSkills() {
 }
 async function fetchCurrencies() {
     try {
-        console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 500000); // 5 seconds timeout
-        const response = await fetch(CURRENCIES_API_URL, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        if (data.success && data.data && data.data.length > 0) {
-            console.log(`✅ ${data.data.length} currencies fetched successfully`);
-            if (process.env.NODE_ENV !== 'production' && data.data.length > 0) {
-                // Debug log only in non-prod or if needed
-                console.log('Sample currency:', JSON.stringify(data.data[0], null, 2));
+        console.log(`🔍 Reading currencies directly from MongoDB collection "currencies"`);
+        const docs = await currencyModel_1.Currency.find({ isActive: true })
+            .select({ code: 1, name: 1, symbol: 1, isActive: 1 })
+            .lean();
+        const currencies = docs.map((doc) => ({
+            _id: String(doc._id),
+            code: doc.code,
+            name: doc.name,
+            symbol: doc.symbol,
+            isActive: doc.isActive,
+        }));
+        if (currencies.length > 0) {
+            console.log(`✅ ${currencies.length} currencies loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample currency:', JSON.stringify(currencies[0], null, 2));
             }
-            return data.data.filter((currency) => currency.isActive);
+            return currencies;
         }
-        else {
-            console.error('Error or empty response from currencies API:', data);
-            throw new Error('Empty currency list');
-        }
+        console.warn('⚠️ Collection "currencies" is empty');
+        throw new Error('Empty currency collection');
     }
     catch (error) {
-        console.error('Error fetching currencies:', error);
+        console.error('Error reading currencies from MongoDB:', error);
         console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
-        // Fallback hardcoded currencies with REAL IDs from production
         return [
             {
-                "_id": "eur-id-placeholder", // Will be matched by code if needed
+                "_id": "eur-id-placeholder",
                 "code": "EUR",
                 "name": "Euro",
                 "symbol": "€",
@@ -116,43 +118,76 @@ async function fetchCurrencies() {
 }
 async function fetchTimezones() {
     try {
-        const response = await fetch(`${EXTERNAL_API_BASE}/timezones`);
-        const data = await response.json();
-        return data.success ? data.data : [];
+        console.log(`🔍 Reading timezones directly from MongoDB collection "timezones"`);
+        // NB: real documents in collection use `zoneName` + `countryCode` + `gmtOffset` + `countryName`
+        // — older schema with `name` / `offset` is kept as alias fallback below.
+        const docs = await timezoneModel_1.Timezone.collection
+            .find({}, {
+            projection: {
+                zoneName: 1,
+                countryCode: 1,
+                countryName: 1,
+                gmtOffset: 1,
+                name: 1,
+                offset: 1,
+                abbreviation: 1,
+                description: 1,
+            },
+        })
+            .toArray();
+        const timezones = docs.map((doc) => ({
+            _id: String(doc._id),
+            zoneName: doc.zoneName || doc.name || '',
+            name: doc.zoneName || doc.name || '',
+            countryCode: doc.countryCode || '',
+            countryName: doc.countryName || '',
+            gmtOffset: doc.gmtOffset ?? null,
+            offset: doc.offset || (typeof doc.gmtOffset === 'number'
+                ? `${doc.gmtOffset >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(doc.gmtOffset) / 3600)).padStart(2, '0')}:${String(Math.floor((Math.abs(doc.gmtOffset) % 3600) / 60)).padStart(2, '0')}`
+                : ''),
+            abbreviation: doc.abbreviation || '',
+            description: doc.description || '',
+        }));
+        if (timezones.length > 0) {
+            console.log(`✅ ${timezones.length} timezones loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample timezone:', JSON.stringify(timezones[0], null, 2));
+            }
+            return timezones;
+        }
+        console.warn('⚠️ Collection "timezones" is empty');
+        return [];
     }
     catch (error) {
-        console.error('Error fetching timezones:', error);
+        console.error('Error reading timezones from MongoDB:', error);
         return [];
     }
 }
-// Fonction pour récupérer les pays depuis l'API externe
 async function fetchCountries() {
     try {
-        const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
-        console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
-        const response = await fetch(countriesApiUrl);
-        const data = await response.json();
-        if (data.success && data.data) {
-            console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
-            return data.data;
+        console.log(`🔍 Reading countries directly from MongoDB collection "countries"`);
+        const docs = await countryModel_1.Country.find({})
+            .select({ name: 1, cca2: 1, flags: 1 })
+            .lean();
+        const countries = docs.map((doc) => ({
+            _id: String(doc._id),
+            name: doc.name,
+            cca2: doc.cca2,
+            flags: doc.flags || {},
+        }));
+        if (countries.length > 0) {
+            console.log(`✅ ${countries.length} countries loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample country:', JSON.stringify({ _id: countries[0]._id, name: countries[0].name, cca2: countries[0].cca2 }, null, 2));
+            }
+            return countries;
         }
-        else {
-            console.error('Erreur réponse API countries:', data);
-            return [];
-        }
+        console.warn('⚠️ Collection "countries" is empty');
+        return [];
     }
     catch (error) {
-        console.error('Error fetching countries from API:', error);
-        // Fallback vers notre base de données locale en cas d'erreur
-        try {
-            const countries = await countryModel_1.Country.find({}, { name: 1, cca2: 1, flags: 1 }).lean();
-            console.log(`⚠️  Fallback: ${countries.length} pays récupérés depuis MongoDB`);
-            return countries || [];
-        }
-        catch (dbError) {
-            console.error('Error fallback database:', dbError);
-            return [];
-        }
+        console.error('Error reading countries from MongoDB:', error);
+        return [];
     }
 }
 class AIController {

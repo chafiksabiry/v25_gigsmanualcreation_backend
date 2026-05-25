@@ -25,11 +25,27 @@ const getAnthropicClient = (): Anthropic | null => {
   return anthropic;
 };
 
+/** Default OpenAI chat models (override via OPENAI_MODEL / OPENAI_FAST_MODEL on Railway) */
+const DEFAULT_OPENAI_MODEL = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+const DEFAULT_OPENAI_FAST_MODEL = (process.env.OPENAI_FAST_MODEL || DEFAULT_OPENAI_MODEL).trim();
+
+/** Models known to support response_format: { type: 'json_object' } (base gpt-4 does not) */
+function openaiSupportsJsonMode(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.startsWith('gpt-4o') ||
+    m.startsWith('gpt-4-turbo') ||
+    m.includes('gpt-3.5-turbo-1106') ||
+    m.includes('gpt-3.5-turbo-0125') ||
+    m.includes('gpt-3.5-turbo-16k')
+  );
+}
+
 /** Valid Anthropic model IDs (try in order if one returns 404) */
 const ANTHROPIC_MODEL_CANDIDATES = [
   process.env.ANTHROPIC_MODEL,
-  'claude-sonnet-4-20250514',
   'claude-3-5-sonnet-20241022',
+  'claude-sonnet-4-20250514',
   'claude-3-haiku-20240307',
 ].filter((m): m is string => !!m && m.trim().length > 0);
 
@@ -49,6 +65,18 @@ function shouldFallbackToClaude(err: unknown): boolean {
   const message: string = String(e?.message || e?.error?.message || '').toLowerCase();
 
   if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) return true;
+  if (status === 400) {
+    const param = String(e?.param || e?.error?.param || '').toLowerCase();
+    if (
+      param === 'response_format' ||
+      param === 'model' ||
+      message.includes('response_format') ||
+      message.includes('json_object') ||
+      message.includes('not supported with this model')
+    ) {
+      return true;
+    }
+  }
   if (code && ['rate_limit_exceeded', 'insufficient_quota', 'server_error', 'service_unavailable', 'overloaded'].includes(code)) return true;
   if (
     message.includes('rate limit') ||
@@ -87,17 +115,28 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
     forceJson = false,
   } = opts;
 
+  const resolvedModel =
+    forceJson && !openaiSupportsJsonMode(openaiModel) ? DEFAULT_OPENAI_MODEL : openaiModel;
+
+  if (forceJson && resolvedModel !== openaiModel) {
+    console.log(
+      `ℹ️ Modèle OpenAI "${openaiModel}" sans mode JSON → utilisation de "${resolvedModel}"`
+    );
+  }
+
   try {
-    console.log(`🤖 Appel OpenAI (${openaiModel}) en cours...`);
+    console.log(`🤖 Appel OpenAI (${resolvedModel}) en cours...`);
     const completion = await getOpenAIClient().chat.completions.create({
-      model: openaiModel,
+      model: resolvedModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       temperature,
       max_tokens: maxTokens,
-      ...(forceJson ? { response_format: { type: 'json_object' as const } } : {}),
+      ...(forceJson && openaiSupportsJsonMode(resolvedModel)
+        ? { response_format: { type: 'json_object' as const } }
+        : {}),
     });
     console.log('✅ Réponse OpenAI reçue');
     const content = completion.choices[0]?.message?.content;
@@ -1016,7 +1055,7 @@ JSON format:
         systemPrompt:
           'You are a helpful assistant that creates comprehensive gig listings. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
         userPrompt: prompt,
-        openaiModel: 'gpt-4',
+        openaiModel: DEFAULT_OPENAI_MODEL,
         temperature: 0.7,
         maxTokens: 2000,
         forceJson: true,
@@ -1298,7 +1337,7 @@ Return JSON in this exact format:
         systemPrompt:
           'You are a helpful assistant that suggests relevant skills for job positions. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
         userPrompt: prompt,
-        openaiModel: 'gpt-4',
+        openaiModel: DEFAULT_OPENAI_MODEL,
         temperature: 0.7,
         maxTokens: 1000,
         forceJson: true,
@@ -1385,7 +1424,7 @@ Format your response as a JSON object with the following structure:
         systemPrompt:
           'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. IMPORTANT: All responses MUST be in English only.',
         userPrompt: prompt,
-        openaiModel: 'gpt-4',
+        openaiModel: DEFAULT_OPENAI_MODEL,
         temperature: 0.7,
         maxTokens: 500,
         forceJson: true,
@@ -1422,7 +1461,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         systemPrompt:
           'You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. IMPORTANT: All responses MUST be in English only.',
         userPrompt: prompt,
-        openaiModel: 'gpt-3.5-turbo',
+        openaiModel: DEFAULT_OPENAI_FAST_MODEL,
         temperature: 0.7,
         maxTokens: 200,
         forceJson: true,
