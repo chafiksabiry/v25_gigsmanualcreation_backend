@@ -681,8 +681,14 @@ class AIService {
         console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => this.getCountryCommonName(c)).join(', ')}`);
         const prompt = `Based on: "${description}"
 
-IMPORTANT: 
-- Respond in the SAME LANGUAGE as input
+CRITICAL LANGUAGE RULE (read first):
+- Detect the language of the description above.
+- ALL human-readable text fields you generate (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, coverageAnalysis, etc.) MUST be written in that EXACT SAME LANGUAGE.
+- Do NOT translate to English unless the input itself is in English.
+- Keep technical identifiers untouched: MongoDB ObjectIds, ISO codes, currency codes, IANA timezones, weekday names (Monday, Tuesday, ...), proficiency codes (A1..C2).
+
+IMPORTANT:
+- Respond in the SAME LANGUAGE as input (see rule above)
 - For destination_zone, use EXACTLY ONE MongoDB ObjectId string from COUNTRIES list (NOT an array, NOT multiple countries)
 - availability.time_zone MUST be the primary IANA timezone of the destination_zone country (France → Europe/Paris, Morocco → Africa/Casablanca, Belgium → Europe/Brussels, Canada → America/Toronto, USA → America/New_York, UK → Europe/London, Germany → Europe/Berlin, Spain → Europe/Madrid, Italy → Europe/Rome). NEVER mix a country with the timezone of a different one.
 - For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
@@ -837,7 +843,7 @@ JSON format:
 }`;
         return retryWithBackoff(async () => {
             const { content } = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
+                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. Return only valid JSON.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
@@ -1066,7 +1072,7 @@ Return JSON in this exact format:
 }`;
         return retryWithBackoff(async () => {
             const { content } = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that suggests relevant skills for job positions. IMPORTANT: All responses MUST be in English only. Return only valid JSON.',
+                systemPrompt: 'You are a helpful assistant that suggests relevant skills for job positions. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write the "details" fields in that EXACT same language. Do NOT translate to English. Keep skill names, language names, ISO codes and proficiency codes untouched. Return only valid JSON.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
@@ -1146,7 +1152,7 @@ Format your response as a JSON object with the following structure:
 }`;
         return retryWithBackoff(async () => {
             const { content } = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. IMPORTANT: All responses MUST be in English only.',
+                systemPrompt: 'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write coverageAnalysis and flexibilityRecommendations in that EXACT same language. Do NOT translate to English. Keep IANA timezone identifiers and 24-hour time strings untouched.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
@@ -1179,7 +1185,7 @@ Description: ${description}
 Example response format: ["US", "CA", "UK", "DE"]`;
         return retryWithBackoff(async () => {
             const { content } = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. IMPORTANT: All responses MUST be in English only.',
+                systemPrompt: 'You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. Respond strictly with a JSON array of ISO country codes (e.g. ["FR","CA","UK"]).',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_FAST_MODEL,
                 temperature: 0.7,
