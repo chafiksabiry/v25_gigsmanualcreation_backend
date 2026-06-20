@@ -18,7 +18,7 @@ dotenv_1.default.config(); // Pour charger les variables d'environnement depuis 
 const app = (0, express_1.default)();
 const port = process.env.PORT || 5003;
 const allowedOrigins = [
-    'https://harx25pageslinks.netlify.app',
+    'https://harx.ai',
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
@@ -58,7 +58,7 @@ const corsOptions = {
 // Middleware CORS manuel (backup)
 app.use((req, res, next) => {
     const allowedOrigins = [
-        'https://harx25pageslinks.netlify.app',
+        'https://harx.ai',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173',

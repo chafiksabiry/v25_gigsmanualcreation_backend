@@ -11,6 +11,7 @@ import '../models/industryModel';
 import '../models/languageModel';
 import '../models/skillModels';
 import '../models/timezoneModel';
+import '../models/countryModel';
 import '../models/userModel';
 import '../models/companyModel';
 import '../models/currencyModel';
