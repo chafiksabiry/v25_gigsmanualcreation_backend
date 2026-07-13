@@ -20,18 +20,29 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
   'http://localhost:5179',
   'http://localhost:5183',
+  'http://localhost:8100',
   'https://harxv25copilotfrontend.netlify.app',
-  "http://localhost:5190",
-  "https://harxv25trainingplatformfrontend.netlify.app",
-  'https://v25.harx.ai'
+  'http://localhost:5190',
+  'https://harxv25trainingplatformfrontend.netlify.app',
+  'https://v25.harx.ai',
+  'capacitor://localhost',
+  'ionic://localhost',
 ];
 
 // CORS configuration
 const corsOptions = {
   origin: function (origin: any, callback: any) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.netlify.app') || origin.endsWith('.harx.ai')) {
+    if (
+      !origin ||
+      allowedOrigins.indexOf(origin) !== -1 ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.harx.ai')
+    ) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
@@ -56,22 +67,15 @@ const corsOptions = {
 
 // Middleware CORS manuel (backup)
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'https://harx.ai',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:5179',
-    'http://localhost:5183',
-    'https://harxv25copilotfrontend.netlify.app',
-    'http://localhost:5190',
-    'https://harxv25trainingplatformfrontend.netlify.app',
-    'https://v25.harx.ai'
-  ];
-
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin as string)) {
-    res.setHeader('Access-Control-Allow-Origin', origin as string);
+  if (
+    origin &&
+    (allowedOrigins.includes(origin) ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.harx.ai'))
+  ) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
