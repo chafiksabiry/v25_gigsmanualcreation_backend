@@ -15,26 +15,45 @@ dotenv.config();  // Pour charger les variables d'environnement depuis un fichie
 const app: Application = express();
 const port = process.env.PORT || 5003;
 
+const allowedOrigins = [
+  'https://harx.ai',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://localhost:5179',
+  'http://localhost:5183',
+  'http://localhost:8100',
+  'https://harxv25copilotfrontend.netlify.app',
+  'http://localhost:5190',
+  'https://harxv25trainingplatformfrontend.netlify.app',
+  'https://v25.harx.ai',
+  'capacitor://localhost',
+  'ionic://localhost',
+];
+
 // CORS configuration
 const corsOptions = {
-  origin: [
-    'https://v25.harx.ai',
-    'https://v25-prod.harx.ai',
-    'https://gigsai.harx.ai',
-    'https://gigsai-prod.harx.ai',
-    'http://localhost:5179',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:5179',
-    'http://localhost:5183',
-    'https://copilot.harx.ai'
-  ],
+  origin: function (origin: any, callback: any) {
+    if (
+      !origin ||
+      allowedOrigins.indexOf(origin) !== -1 ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.harx.ai')
+    ) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'X-Requested-With',
     'Accept',
     'Origin',
@@ -48,32 +67,27 @@ const corsOptions = {
 
 // Middleware CORS manuel (backup)
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'https://v25.harx.ai',
-    'https://v25-prod.harx.ai',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
-    'http://localhost:5179',
-    'http://localhost:5183',
-    'https://copilot.harx.ai'
-  ];
-  
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin as string)) {
-    res.setHeader('Access-Control-Allow-Origin', origin as string);
+  if (
+    origin &&
+    (allowedOrigins.includes(origin) ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.harx.ai'))
+  ) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
   }
-  
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, X-File-Name');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Max-Age', '86400');
-  
+
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
-  
+
   next();
 });
 
@@ -83,7 +97,9 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors(corsOptions));
 
 // Connexion à MongoDB
-mongoose.connect(process.env.MONGO_URI as string)
+const mongoUri = process.env.MONGO_URI || 'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
+
+mongoose.connect(mongoUri)
   .then(() => {
     console.log('Connected to MongoDB');
   })

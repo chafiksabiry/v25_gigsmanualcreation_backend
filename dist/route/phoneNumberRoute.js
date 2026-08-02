@@ -33,38 +33,17 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Currency = void 0;
-const mongoose_1 = __importStar(require("mongoose"));
-const currencySchema = new mongoose_1.Schema({
-    code: {
-        type: String,
-        required: true,
-        unique: true,
-        uppercase: true,
-        trim: true,
-        minlength: 3,
-        maxlength: 3
-    },
-    name: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    symbol: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    isActive: {
-        type: Boolean,
-        default: true
-    }
-}, {
-    timestamps: true,
-    collection: 'currencies'
-});
-// Index pour améliorer les performances de recherche
-// Note: code field already has unique index from schema definition
-currencySchema.index({ name: 1 });
-currencySchema.index({ isActive: 1 });
-exports.Currency = mongoose_1.default.model('Currency', currencySchema);
+const express_1 = require("express");
+const phoneNumberController = __importStar(require("../controllers/phoneNumberController"));
+const router = (0, express_1.Router)();
+// Check if gig has a phone number
+router.get('/gig/:gigId/check', phoneNumberController.checkGigNumber);
+// Search for available phone numbers (Telnyx)
+router.get('/search', phoneNumberController.searchNumbers);
+// Search for available phone numbers (Twilio)
+router.get('/search/twilio', phoneNumberController.searchTwilioNumbers);
+// Purchase a phone number (Telnyx)
+router.post('/purchase', phoneNumberController.purchaseNumber);
+// Purchase a phone number (Twilio)
+router.post('/purchase/twilio', phoneNumberController.purchaseTwilioNumber);
+exports.default = router;

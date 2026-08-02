@@ -17,6 +17,7 @@ exports.GigSchema = new mongoose_1.Schema({
         ref: 'Country',
         required: false
     },
+    sectors: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Sector', required: false }],
     activities: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Industry', required: false }],
     seniority: {
@@ -62,21 +63,15 @@ exports.GigSchema = new mongoose_1.Schema({
         }
     },
     commission: {
-        base: { type: String, required: false },
-        baseAmount: { type: String, required: false },
-        bonus: String,
-        bonusAmount: String,
-        structure: String,
+        commission_per_call: { type: Number, required: false },
+        bonusAmount: { type: String, required: false },
         currency: { type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Currency', required: false },
         minimumVolume: {
             amount: { type: String, required: false },
             period: { type: String, required: false },
             unit: { type: String, required: false },
         },
-        transactionCommission: {
-            type: { type: String, required: false },
-            amount: { type: String, required: false },
-        },
+        transactionCommission: { type: Number, required: false },
         additionalDetails: { type: String, required: false },
     },
     leads: {
@@ -132,5 +127,53 @@ exports.GigSchema = new mongoose_1.Schema({
         default: 'to_activate',
         required: true
     },
+    // Activation checklist — see the `IGig.setupSteps` JSDoc above for
+    // the full per-step contract. Stored as a nested object so each
+    // flag can be patched individually (`{ $set: { 'setupSteps.telephony': true } }`).
+    setupSteps: {
+        telephony: { type: Boolean, default: false },
+        uploadContacts: { type: Boolean, default: false },
+        callScript: { type: Boolean, default: false },
+        knowledgeBase: { type: Boolean, default: false },
+        repOnboarding: { type: Boolean, default: false },
+        sessionPlanning: { type: Boolean, default: false },
+        gigActivation: { type: Boolean, default: false },
+    },
 }, { timestamps: true });
+// Keep `setupSteps.gigActivation` aligned with the gig's lifecycle:
+// the very last checklist tile flips to `true` automatically the moment
+// the status becomes `active`, without forcing callers to set both fields.
+// We hook into both `save` (for `new Gig(...).save()`) and `findOneAndUpdate`
+// (for the `PUT /:id` controller path).
+exports.GigSchema.pre('save', function (next) {
+    if (this.status === 'active') {
+        if (!this.setupSteps) {
+            // @ts-ignore — sub-doc defaults haven't been applied yet on a fresh doc
+            this.setupSteps = {
+                telephony: false,
+                uploadContacts: false,
+                callScript: false,
+                knowledgeBase: false,
+                repOnboarding: false,
+                sessionPlanning: false,
+                gigActivation: true,
+            };
+        }
+        else {
+            this.setupSteps.gigActivation = true;
+        }
+    }
+    next();
+});
+exports.GigSchema.pre('findOneAndUpdate', function (next) {
+    const update = this.getUpdate();
+    if (!update)
+        return next();
+    const $set = update.$set || update;
+    if ($set?.status === 'active') {
+        update.$set = { ...($set || {}), 'setupSteps.gigActivation': true };
+        this.setUpdate(update);
+    }
+    next();
+});
 exports.Gig = (0, mongoose_1.model)('Gig', exports.GigSchema);

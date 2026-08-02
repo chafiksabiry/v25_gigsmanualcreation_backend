@@ -1,6 +1,9 @@
 import { Gig, IGig } from "../models/gigModel";
 import mongoose from "mongoose";
 import { GigRepository } from '../repositories/gigRepository';
+import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFacing";
+import { Language } from "../models/languageModel";
+import axios from 'axios';
 // Import des modèles pour le populate
 import '../models/sectorModel';
 import '../models/activityModel';
@@ -8,6 +11,7 @@ import '../models/industryModel';
 import '../models/languageModel';
 import '../models/skillModels';
 import '../models/timezoneModel';
+import '../models/countryModel';
 import '../models/userModel';
 import '../models/companyModel';
 import '../models/currencyModel';
@@ -19,11 +23,42 @@ export class GigService {
     this.gigRepository = gigRepository;
   }
 
+  private static async resolveLanguages(gigData: any) {
+    if (gigData.skills && gigData.skills.languages) {
+      for (const langItem of gigData.skills.languages) {
+        if (langItem.language && typeof langItem.language === 'string' && !mongoose.Types.ObjectId.isValid(langItem.language)) {
+          const languageDoc = await Language.findOne({ name: langItem.language });
+          if (languageDoc) {
+            langItem.language = languageDoc._id;
+          } else {
+            const fallbackDoc = await Language.findOne({ name: new RegExp(`^${langItem.language}$`, 'i') });
+            if (fallbackDoc) {
+              langItem.language = fallbackDoc._id;
+            }
+          }
+        }
+      }
+    }
+  }
+
   static async createGig(gigData: any) {
     try {
+      await GigService.resolveLanguages(gigData);
       const newGig = new Gig(gigData);
       await newGig.save();
-      return newGig;
+
+      // Update onboarding progress (Step 3: Create a Gig)
+      try {
+        const onboardingUrl = `https://v25searchcompanywizardbackend-production.up.railway.app/api/onboarding/phases/2/steps/3/complete?companyId=${newGig.companyId}`;
+        console.log(`[GigService] Calling onboarding API: ${onboardingUrl}`);
+        const response = await axios.put(onboardingUrl);
+        console.log(`[GigService] Onboarding update response status:`, response.status);
+      } catch (onboardingError) {
+        console.error(`[GigService] Failed to update onboarding progress:`, onboardingError);
+        // We don't fail the gig creation if onboarding update fails, but we log it.
+      }
+
+      return enrichGigForApi(newGig);
     } catch (error: any) {
       console.error("Error in createGig:", error);
       if (error.name === "ValidationError") {
@@ -35,7 +70,7 @@ export class GigService {
 
   static async getAllGigs() {
     try {
-      return await Gig.find()
+      const gigs = await Gig.find()
         .populate('sectors')
         .populate('activities')
         .populate('industries')
@@ -47,6 +82,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getAllGigs:", error);
       throw new Error("Failed to retrieve gigs");
@@ -55,7 +91,7 @@ export class GigService {
 
   static async getActiveGigs() {
     try {
-      return await Gig.find({ status: 'active' })
+      const activeGigs = await Gig.find({ status: 'active' })
         .populate('sectors')
         .populate('activities')
         .populate('industries')
@@ -68,6 +104,7 @@ export class GigService {
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
         .populate('companyId');
+      return enrichGigsForApi(activeGigs);
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
       throw new Error("Failed to retrieve active gigs");
@@ -95,7 +132,7 @@ export class GigService {
       if (!gig) {
         throw new Error("Gig not found");
       }
-      return gig;
+      return enrichGigForApi(gig);
     } catch (error) {
       console.error("Error in getGigById:", error);
       throw new Error("Failed to retrieve gig");
@@ -125,7 +162,7 @@ export class GigService {
       if (!gig) {
         throw new Error("Gig not found");
       }
-      return gig;
+      return enrichGigForApi(gig);
     } catch (error) {
       console.error("Error in getGigDetailsById:", error);
       throw new Error("Failed to retrieve gig details");
@@ -134,6 +171,7 @@ export class GigService {
 
   static async updateGig(id: string, updateData: any) {
     try {
+      await GigService.resolveLanguages(updateData);
       console.log('🔍 SERVICE - updateGig called with ID:', id);
       console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
       
@@ -159,7 +197,7 @@ export class GigService {
       }
 
       console.log('✅ SERVICE - Gig updated successfully:', updatedGig._id);
-      return updatedGig;
+      return enrichGigForApi(updatedGig);
     } catch (error) {
       console.error("❌ SERVICE - Error in updateGig:", error);
       console.error("❌ SERVICE - Error details:", error instanceof Error ? error.message : 'Unknown error');
@@ -222,7 +260,7 @@ export class GigService {
       if (!deletedGig) {
         throw new Error("Gig not found");
       }
-      return deletedGig;
+      return enrichGigForApi(deletedGig);
     } catch (error) {
       console.error("Error in deleteGig:", error);
       throw new Error("Failed to delete gig");
@@ -247,7 +285,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
-      return gigs;
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getGigsByUserId:", error);
       throw new Error("Failed to retrieve gigs");
@@ -272,7 +310,7 @@ export class GigService {
         .populate('skills.technical.skill')
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
-      return gigs;
+      return enrichGigsForApi(gigs);
     } catch (error) {
       console.error("Error in getGigsByCompanyId:", error);
       throw new Error("Failed to retrieve gigs");
@@ -320,7 +358,7 @@ export class GigService {
         .populate('skills.soft.skill')
         .populate('skills.languages.language');
 
-      return lastGig;
+      return lastGig ? enrichGigForApi(lastGig) : null;
     } catch (error) {
       console.error("Error in getLastGigByCompanyId:", error);
       throw new Error("Failed to retrieve last gig for company");

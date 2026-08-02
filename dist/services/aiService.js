@@ -5,8 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIService = void 0;
 const openai_1 = __importDefault(require("openai"));
+const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 // Configuration sécurisée d'OpenAI côté backend - initialisation conditionnelle
 let openai = null;
+let anthropic = null;
 const getOpenAIClient = () => {
     if (!openai) {
         if (!process.env.OPENAI_API_KEY) {
@@ -18,6 +20,146 @@ const getOpenAIClient = () => {
     }
     return openai;
 };
+const getAnthropicClient = () => {
+    if (anthropic)
+        return anthropic;
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key)
+        return null;
+    anthropic = new sdk_1.default({ apiKey: key });
+    return anthropic;
+};
+/** Default OpenAI chat models (override via OPENAI_MODEL / OPENAI_FAST_MODEL on Railway) */
+const DEFAULT_OPENAI_MODEL = (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+const DEFAULT_OPENAI_FAST_MODEL = (process.env.OPENAI_FAST_MODEL || DEFAULT_OPENAI_MODEL).trim();
+/** Models known to support response_format: { type: 'json_object' } (base gpt-4 does not) */
+function openaiSupportsJsonMode(model) {
+    const m = model.toLowerCase();
+    return (m.startsWith('gpt-4o') ||
+        m.startsWith('gpt-4-turbo') ||
+        m.includes('gpt-3.5-turbo-1106') ||
+        m.includes('gpt-3.5-turbo-0125') ||
+        m.includes('gpt-3.5-turbo-16k'));
+}
+/** Valid Anthropic model IDs (try in order if one returns 404) */
+const ANTHROPIC_MODEL_CANDIDATES = [
+    process.env.ANTHROPIC_MODEL,
+    'claude-3-5-sonnet-20241022',
+    'claude-sonnet-4-20250514',
+    'claude-3-haiku-20240307',
+].filter((m) => !!m && m.trim().length > 0);
+function isAnthropicModelNotFound(err) {
+    const e = err;
+    const status = e?.status ?? e?.response?.status;
+    const msg = String(e?.message || e?.error?.message || '').toLowerCase();
+    return status === 404 || msg.includes('not_found') || msg.includes('model:');
+}
+/** Detect transient/failure errors where fallback to Claude makes sense */
+function shouldFallbackToClaude(err) {
+    if (!err)
+        return false;
+    const e = err;
+    const status = e?.status || e?.response?.status;
+    const code = e?.code || e?.error?.code;
+    const message = String(e?.message || e?.error?.message || '').toLowerCase();
+    if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504)
+        return true;
+    if (status === 400) {
+        const param = String(e?.param || e?.error?.param || '').toLowerCase();
+        if (param === 'response_format' ||
+            param === 'model' ||
+            message.includes('response_format') ||
+            message.includes('json_object') ||
+            message.includes('not supported with this model')) {
+            return true;
+        }
+    }
+    if (code && ['rate_limit_exceeded', 'insufficient_quota', 'server_error', 'service_unavailable', 'overloaded'].includes(code))
+        return true;
+    if (message.includes('rate limit') ||
+        message.includes('overloaded') ||
+        message.includes('temporarily unavailable') ||
+        message.includes('connection error') ||
+        message.includes('econnreset') ||
+        message.includes('etimedout') ||
+        message.includes('socket hang up'))
+        return true;
+    return false;
+}
+/**
+ * Single entry point for OpenAI calls with automatic Anthropic Claude fallback
+ * if OpenAI fails (rate limits, downtime, server errors).
+ */
+async function callLLMWithFallback(opts) {
+    const { systemPrompt, userPrompt, openaiModel, temperature = 0.7, maxTokens = 2000, forceJson = false, } = opts;
+    const resolvedModel = forceJson && !openaiSupportsJsonMode(openaiModel) ? DEFAULT_OPENAI_MODEL : openaiModel;
+    if (forceJson && resolvedModel !== openaiModel) {
+        console.log(`ℹ️ Modèle OpenAI "${openaiModel}" sans mode JSON → utilisation de "${resolvedModel}"`);
+    }
+    try {
+        console.log(`🤖 Appel OpenAI (${resolvedModel}) en cours...`);
+        const completion = await getOpenAIClient().chat.completions.create({
+            model: resolvedModel,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+            ],
+            temperature,
+            max_tokens: maxTokens,
+            ...(forceJson && openaiSupportsJsonMode(resolvedModel)
+                ? { response_format: { type: 'json_object' } }
+                : {}),
+        });
+        console.log('✅ Réponse OpenAI reçue');
+        const content = completion.choices[0]?.message?.content;
+        if (!content)
+            throw new Error('No content received from OpenAI');
+        return { content, provider: 'openai' };
+    }
+    catch (openaiError) {
+        const fallback = shouldFallbackToClaude(openaiError);
+        console.error(`❌ Erreur OpenAI (fallback Claude = ${fallback}):`, openaiError?.message || openaiError);
+        if (!fallback)
+            throw openaiError;
+        const claude = getAnthropicClient();
+        if (!claude) {
+            console.error('⚠️ ANTHROPIC_API_KEY non configurée — impossible de basculer vers Claude');
+            throw openaiError;
+        }
+        const claudeSystem = forceJson
+            ? `${systemPrompt}\n\nIMPORTANT: Respond with VALID JSON ONLY, no markdown, no commentary.`
+            : systemPrompt;
+        let lastClaudeError = openaiError;
+        for (const modelId of ANTHROPIC_MODEL_CANDIDATES) {
+            try {
+                console.log(`🤖 Fallback vers Anthropic Claude (${modelId})...`);
+                const response = await claude.messages.create({
+                    model: modelId,
+                    max_tokens: maxTokens,
+                    temperature,
+                    system: claudeSystem,
+                    messages: [{ role: 'user', content: userPrompt }],
+                });
+                console.log(`✅ Réponse Claude reçue (${modelId})`);
+                const textBlock = response.content.find((b) => b.type === 'text');
+                const content = textBlock?.text || '';
+                if (!content)
+                    throw new Error('No content received from Claude fallback');
+                return { content, provider: 'anthropic' };
+            }
+            catch (claudeErr) {
+                lastClaudeError = claudeErr;
+                if (isAnthropicModelNotFound(claudeErr)) {
+                    console.warn(`⚠️ Modèle Claude introuvable (${modelId}), essai suivant...`);
+                    continue;
+                }
+                throw claudeErr;
+            }
+        }
+        console.error('❌ Tous les modèles Claude ont échoué:', lastClaudeError?.message || lastClaudeError);
+        throw lastClaudeError;
+    }
+}
 // Rate limiting configuration
 const RETRY_DELAY = 1000;
 const MAX_RETRIES = 3;
@@ -45,10 +187,182 @@ const PREDEFINED_CATEGORIES = [
     'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support',
     'Multilingual Support'
 ];
+const TEAM_ROLES = [
+    "Agent Senior",
+    "Agent",
+    "Agent Junior",
+];
 class AIService {
     static isValidApiKey() {
         const key = process.env.OPENAI_API_KEY;
         return !!(key && key !== 'your_openai_api_key_here' && key.startsWith('sk-'));
+    }
+    /** Extract a 24-char MongoDB ObjectId from string, { $oid }, { _id }, or array */
+    static extractMongoId(value) {
+        if (value == null)
+            return null;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (/^[0-9a-fA-F]{24}$/.test(trimmed))
+                return trimmed;
+            return null;
+        }
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                const id = this.extractMongoId(item);
+                if (id)
+                    return id;
+            }
+            return null;
+        }
+        if (typeof value === 'object') {
+            const obj = value;
+            if (obj.$oid != null)
+                return this.extractMongoId(obj.$oid);
+            if (obj._id != null)
+                return this.extractMongoId(obj._id);
+        }
+        return null;
+    }
+    static getCountryCommonName(country) {
+        return country?.name?.common || '';
+    }
+    static getEntityLabel(entity) {
+        if (!entity)
+            return '';
+        if (typeof entity === 'string')
+            return entity;
+        if (typeof entity.name === 'string')
+            return entity.name;
+        if (entity.name?.common)
+            return entity.name.common;
+        return String(entity.code || '');
+    }
+    /** Pick the timezone whose document matches the country (by countryCode or by IANA zone). */
+    static findTimezoneForCountry(countryDoc, timezonesList) {
+        if (!countryDoc || !timezonesList?.length)
+            return null;
+        const cca2 = String(countryDoc?.cca2 || '').toUpperCase();
+        const ianaZone = this.COUNTRY_TIMEZONE_MAP[cca2];
+        // 1) First try: a timezone document whose countryCode matches AND whose zoneName equals the primary IANA zone
+        if (ianaZone) {
+            const exact = timezonesList.find((tz) => {
+                const tzCountry = String(tz?.countryCode || '').toUpperCase();
+                const zone = tz?.zoneName || tz?.name || '';
+                return tzCountry === cca2 && zone === ianaZone;
+            });
+            if (exact)
+                return { id: String(exact._id), zoneName: exact.zoneName || exact.name || ianaZone };
+        }
+        // 2) Fallback: any timezone document for that country (most countries have only one main zone here)
+        if (cca2) {
+            const byCountry = timezonesList.find((tz) => String(tz?.countryCode || '').toUpperCase() === cca2);
+            if (byCountry) {
+                return {
+                    id: String(byCountry._id),
+                    zoneName: byCountry.zoneName || byCountry.name || ianaZone || '',
+                };
+            }
+        }
+        // 3) Fallback: a document whose zoneName matches the IANA zone (whatever countryCode)
+        if (ianaZone) {
+            const byZone = timezonesList.find((tz) => (tz?.zoneName || tz?.name) === ianaZone);
+            if (byZone)
+                return { id: String(byZone._id), zoneName: ianaZone };
+        }
+        return null;
+    }
+    static getCountryById(countriesData, countryId) {
+        if (!countriesData?.length || !countryId)
+            return null;
+        return countriesData.find((c) => String(c?._id) === countryId) || null;
+    }
+    /** Attach human-readable labels for preview (destination, timezone, currency). */
+    static enrichGigResponseMeta(parsedResponse, countriesData, timezonesData, currenciesData) {
+        const destId = this.extractMongoId(parsedResponse.destination_zone);
+        if (destId) {
+            const country = this.getCountryById(countriesData, destId);
+            if (country) {
+                parsedResponse.destination_zone_meta = {
+                    _id: String(country._id),
+                    name: {
+                        common: country.name?.common || '',
+                        official: country.name?.official || '',
+                    },
+                    cca2: country.cca2 || '',
+                    flag: country.flags?.svg || country.flags?.png || '',
+                };
+            }
+        }
+        const tzId = this.extractMongoId(parsedResponse.availability?.time_zone ?? parsedResponse.schedule?.time_zone);
+        if (tzId && timezonesData?.length) {
+            const tz = timezonesData.find((t) => String(t._id) === tzId);
+            if (tz) {
+                const timeZoneMeta = {
+                    _id: String(tz._id),
+                    zoneName: tz.zoneName || tz.name || '',
+                    countryCode: tz.countryCode || '',
+                    countryName: tz.countryName || '',
+                    gmtOffset: tz.gmtOffset,
+                };
+                if (parsedResponse.availability) {
+                    parsedResponse.availability.time_zone_meta = timeZoneMeta;
+                }
+                if (parsedResponse.schedule) {
+                    parsedResponse.schedule.time_zone_meta = timeZoneMeta;
+                }
+            }
+        }
+        const currencyId = this.extractMongoId(parsedResponse.commission?.currency);
+        if (currencyId && currenciesData?.length) {
+            const currency = currenciesData.find((c) => String(c._id) === currencyId);
+            if (currency && parsedResponse.commission) {
+                parsedResponse.commission.currency_meta = {
+                    _id: String(currency._id),
+                    code: currency.code || '',
+                    name: currency.name || '',
+                    symbol: currency.symbol || '',
+                };
+            }
+        }
+        if (parsedResponse.team?.territories?.length && countriesData?.length) {
+            parsedResponse.team.territories_meta = parsedResponse.team.territories
+                .map((territory) => {
+                const id = this.extractMongoId(territory);
+                if (!id)
+                    return null;
+                const doc = this.getCountryById(countriesData, id);
+                if (!doc)
+                    return null;
+                return {
+                    _id: String(doc._id),
+                    name: { common: doc.name?.common || '' },
+                    cca2: doc.cca2 || '',
+                };
+            })
+                .filter(Boolean);
+        }
+    }
+    static normalizeDestinationZone(rawValue, countriesData, description) {
+        const fromMongo = this.extractMongoId(rawValue);
+        if (fromMongo)
+            return fromMongo;
+        if (typeof rawValue === 'string' && rawValue.trim() && !rawValue.includes('[object')) {
+            const byName = this.findCountryId(rawValue.trim(), countriesData, description);
+            if (byName)
+                return byName;
+        }
+        const detected = this.analyzeDescriptionForCountry(description, countriesData);
+        if (detected) {
+            const byContext = this.findCountryId(detected, countriesData, description);
+            if (byContext)
+                return byContext;
+        }
+        if (countriesData && countriesData.length > 0) {
+            const france = countriesData.find((c) => c?.name?.common === 'France');
+            return france?._id || countriesData[0]._id;
+        }
+        return '';
     }
     /**
      * Trouve la catégorie la plus appropriée parmi les catégories prédéfinies
@@ -322,41 +636,76 @@ class AIService {
         const softSkillNames = skillsData.soft.slice(0, 10).map(skill => skill.name); // Limiter à 10
         const professionalSkillNames = skillsData.professional.slice(0, 10).map(skill => skill.name); // Limiter à 10
         const technicalSkillNames = skillsData.technical.slice(0, 10).map(skill => skill.name); // Limiter à 10
-        const currencyNames = currenciesData ? currenciesData.slice(0, 10).map(currency => `${currency.code}`) : []; // Seulement les codes
+        // Prioriser EUR, USD, GBP en tête de liste pour aider l'IA
+        const priorityCurrencyCodes = ['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'MAD'];
+        const sortedCurrencies = currenciesData
+            ? [...currenciesData].sort((a, b) => {
+                const aPriority = priorityCurrencyCodes.indexOf(a.code);
+                const bPriority = priorityCurrencyCodes.indexOf(b.code);
+                if (aPriority !== -1 && bPriority === -1)
+                    return -1;
+                if (aPriority === -1 && bPriority !== -1)
+                    return 1;
+                if (aPriority !== -1 && bPriority !== -1)
+                    return aPriority - bPriority;
+                return (a.code || '').localeCompare(b.code || '');
+            })
+            : [];
+        // Inclure toutes les currencies disponibles (limité à 25 pour éviter dépassement de tokens)
+        const currencyOptions = sortedCurrencies
+            .slice(0, 25)
+            .map((currency) => `${currency.code} (${currency.name}, ${currency.symbol}): ${currency._id}`)
+            .join('\n');
+        if (sortedCurrencies.length === 0) {
+            console.warn('⚠️ Aucune devise disponible pour OpenAI - currency sera défaillant');
+        }
+        else {
+            console.log(`💰 ${sortedCurrencies.length} devises envoyées au prompt (top: ${sortedCurrencies.slice(0, 3).map((c) => c.code).join(', ')})`);
+        }
         // Prioriser les pays importants pour les gigs (France, pays francophones, Europe, etc.)
         const priorityCountries = ['France', 'Egypt', 'Belgium', 'Switzerland', 'Canada', 'Morocco', 'Tunisia', 'Algeria', 'Senegal', 'United States', 'United Kingdom', 'Germany', 'Spain', 'Italy'];
         const sortedCountries = countriesData ? [...countriesData].sort((a, b) => {
-            const aIsPriority = priorityCountries.includes(a.name.common);
-            const bIsPriority = priorityCountries.includes(b.name.common);
+            const aName = this.getCountryCommonName(a);
+            const bName = this.getCountryCommonName(b);
+            const aIsPriority = priorityCountries.includes(aName);
+            const bIsPriority = priorityCountries.includes(bName);
             if (aIsPriority && !bIsPriority)
                 return -1;
             if (!aIsPriority && bIsPriority)
                 return 1;
-            return a.name.common.localeCompare(b.name.common);
+            return aName.localeCompare(bName);
         }) : [];
         // Limiter à 30 pays maximum pour respecter la limite de tokens OpenAI
-        const countryOptions = sortedCountries.slice(0, 30).map(country => `${country.name.common}: ${country._id}`).join(', ');
+        const countryOptions = sortedCountries.slice(0, 30).map(country => `${this.getCountryCommonName(country)}: ${country._id}`).join(', ');
         console.log(`🔍 Prompt préparé avec ${sortedCountries.length} pays (limité à 30), ${activityNames.length} activités`);
-        console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => c.name.common).join(', ')}`);
+        console.log(`🔍 Première pays dans la liste: ${sortedCountries.slice(0, 5).map(c => this.getCountryCommonName(c)).join(', ')}`);
         const prompt = `Based on: "${description}"
 
-IMPORTANT: 
-- Respond in the SAME LANGUAGE as input
-- For destination_zone, use ONLY MongoDB ObjectId from COUNTRIES list
+CRITICAL LANGUAGE RULE (read first):
+- Detect the language of the description above.
+- ALL human-readable text fields you generate (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, coverageAnalysis, etc.) MUST be written in that EXACT SAME LANGUAGE.
+- Do NOT translate to English unless the input itself is in English.
+- Keep technical identifiers untouched: MongoDB ObjectIds, ISO codes, currency codes, IANA timezones, weekday names (Monday, Tuesday, ...), proficiency codes (A1..C2).
+
+IMPORTANT:
+- Respond in the SAME LANGUAGE as input (see rule above)
+- For destination_zone, use EXACTLY ONE MongoDB ObjectId string from COUNTRIES list (NOT an array, NOT multiple countries)
+- availability.time_zone MUST be the primary IANA timezone of the destination_zone country (France → Europe/Paris, Morocco → Africa/Casablanca, Belgium → Europe/Brussels, Canada → America/Toronto, USA → America/New_York, UK → Europe/London, Germany → Europe/Berlin, Spain → Europe/Madrid, Italy → Europe/Rome). NEVER mix a country with the timezone of a different one.
+- For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
 - Detect country from language/currency/context
 - Use only options below:
 
 CATEGORIES (choose the most appropriate one):
 ${PREDEFINED_CATEGORIES.join(', ')}
 
-COUNTRIES (use the ObjectId for destination_zone):
+COUNTRIES — destination_zone MUST be a single ObjectId string (pick the PRIMARY target country only):
 ${countryOptions}
 
 ACTIVITIES (choose the most relevant ones):
 ${activityNames.join(', ')}
 
 INDUSTRIES (choose the most relevant ones):
-${industriesData.map(ind => `${ind.name} (${ind.code})`).join(', ')}
+${industriesData.map(ind => `${this.getEntityLabel(ind)}${ind.code ? ` (${ind.code})` : ''}`).join(', ')}
 
 LANGUAGES (suggest relevant ones with proficiency levels A1-C2):
 ${languagesData.map(lang => `${lang.name} (${lang.iso639_1})`).join(', ')}
@@ -370,14 +719,47 @@ ${professionalSkillNames.join(', ')}
 TECHNICAL SKILLS (choose relevant ones with levels 1-5):
 ${technicalSkillNames.join(', ')}
 
-CURRENCIES: ${currencyNames.join(', ')}
+CURRENCIES — STRICT RULE (use the EXACT MongoDB ObjectId, never the code):
+The "commission.currency" field MUST be filled with the ObjectId shown after the colon below.
+NEVER return the currency code (like "EUR" or "USD") as the value — always the ObjectId.
+If you cannot determine a currency from the context, default to EUR.
+${currencyOptions}
+
+TEAM ROLES (choose the most appropriate ones from this list):
+${TEAM_ROLES.join(', ')}
 
 RULES:
 - Same language as input
 - Match country to context/language
-- Commission: base="Base + Commission", bonus="Performance Bonus"
 - Days: Monday, Tuesday, etc. (no "Other days")
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
+- team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
+
+COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
+- "commission_per_call" = AMOUNT (number, in the selected currency) PAID TO THE AGENT FOR EACH SUCCESSFUL CALL THEY PERFORM.
+  • Extract a real number if mentioned (e.g. "5€ par appel" → 5). 
+  • DEFAULT = 2 if nothing is said.
+- "transactionCommission" = AMOUNT (number) PAID TO THE AGENT FOR EACH CLOSED/COMPLETED TRANSACTION (e.g. a sale, a signed contract). Different from commission_per_call.
+  • Extract real number if mentioned (e.g. "50€ par vente" → 50).
+  • DEFAULT = 25 if nothing is said.
+- "bonusAmount" = BONUS AMOUNT (number) PAID WHEN THE AGENT REACHES A MINIMUM VOLUME OF CALLS over a period.
+  • Extract real number if mentioned (e.g. "bonus de 200€" → 200).
+  • DEFAULT = 100 if nothing is said.
+- "minimumVolume" describes THE NUMBER OF CALLS REQUIRED TO TRIGGER THE BONUS, OVER A PERIOD.
+  • "amount" = number of calls to reach (as a string). Extract from text (e.g. "100 calls/month" → "100"). DEFAULT = "50".
+  • "period" = "Daily" | "Weekly" | "Monthly". Detect from context. DEFAULT = "Monthly".
+  • "unit" = "Calls" | "Transactions". Choose what's mentioned. DEFAULT = "Calls".
+- "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }. DEFAULT = EUR ObjectId.
+- "additionalDetails" = short paragraph (2-3 sentences) summarising payment frequency (weekly/monthly), how the bonus triggers, and any special clauses. SAME LANGUAGE AS INPUT.
+
+EXAMPLES:
+- "Pay 5€ per call + 50€ per sale, bonus 200€ if 100 calls per month" →
+  commission_per_call: 5, transactionCommission: 50, bonusAmount: 200,
+  minimumVolume: { amount: "100", period: "Monthly", unit: "Calls" }
+- "10$ per call, 5 calls per day bonus 30$" →
+  commission_per_call: 10, transactionCommission: 25 (default), bonusAmount: 30,
+  minimumVolume: { amount: "5", period: "Daily", unit: "Calls" }
+- Nothing specified about commission → use ALL defaults above.
 
 JSON format:
 {
@@ -386,7 +768,7 @@ JSON format:
   "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
   "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
   "category": "One of the predefined categories above",
-  "destination_zone": "MONGODB_OBJECTID_FROM_COUNTRIES_LIST",
+  "destination_zone": "SINGLE_MONGODB_OBJECTID_STRING_FROM_COUNTRIES_LIST",
   "activities": ["activity1", "activity2"],
   "industries": ["industry1", "industry2"],
   "seniority": {
@@ -430,23 +812,19 @@ JSON format:
       "monthly": 80
     }
   },
-  "commission": {
-    "base": "Base + Commission",
-    "baseAmount": 0,
-    "bonus": "Performance Bonus",
-    "bonusAmount": 150,
-    "structure": "",
-    "currency": "EUR",
+    "commission": {
+    "commission_per_call": 2,
+    "transactionCommission": 25,
+    "bonusAmount": 100,
+    "currency": {
+      "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
+    },
     "minimumVolume": {
-      "amount": 25,
+      "amount": "50",
       "period": "Monthly",
       "unit": "Calls"
     },
-    "transactionCommission": {
-      "type": "Fixed Amount",
-      "amount": 50
-    },
-    "additionalDetails": "Detailed compensation information and performance bonuses (IN SAME LANGUAGE AS USER QUERY)"
+    "additionalDetails": "Comprehensive 2-3 sentence summary in the SAME LANGUAGE as input: include per-call pay, per-transaction commission, bonus trigger (X calls per day/week/month) and payment frequency (weekly/monthly)."
   },
   "team": {
     "size": 1,
@@ -464,37 +842,21 @@ JSON format:
   }
 }`;
         return retryWithBackoff(async () => {
-            console.log('🤖 Appel OpenAI en cours...');
-            const completion = await getOpenAIClient().chat.completions.create({
-                model: 'gpt-4',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful assistant that creates comprehensive gig listings. IMPORTANT: All responses MUST be in English only. Return only valid JSON.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+            const { content } = await callLLMWithFallback({
+                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. Return only valid JSON.',
+                userPrompt: prompt,
+                openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
-                max_tokens: 2000
+                maxTokens: 2000,
+                forceJson: true,
             });
-            console.log('✅ Réponse OpenAI reçue');
-            const content = completion.choices[0].message.content;
-            if (!content) {
-                throw new Error('No content received from OpenAI');
-            }
             try {
                 const parsedResponse = this.parseOpenAIResponse(content);
-                // OpenAI doit retourner directement les ObjectIds MongoDB - pas de conversion nécessaire
-                console.log(`🔍 destination_zone reçu d'OpenAI: "${parsedResponse.destination_zone}"`);
-                // Valider que destination_zone est un ObjectId valide
-                if (parsedResponse.destination_zone && typeof parsedResponse.destination_zone === 'string' && parsedResponse.destination_zone.length === 24) {
-                    console.log(`✅ destination_zone est un ObjectId valide: ${parsedResponse.destination_zone}`);
-                }
-                else {
-                    console.log(`⚠️ destination_zone n'est pas un ObjectId MongoDB valide: "${parsedResponse.destination_zone}"`);
+                const rawDestinationZone = parsedResponse.destination_zone;
+                parsedResponse.destination_zone = this.normalizeDestinationZone(rawDestinationZone, countriesData, description);
+                console.log(`🔍 destination_zone normalisé: ${parsedResponse.destination_zone || '(vide)'}`);
+                if (Array.isArray(rawDestinationZone)) {
+                    console.log(`⚠️ OpenAI a renvoyé un tableau destination_zone — premier pays conservé`);
                 }
                 // Valider et corriger la catégorie
                 if (parsedResponse.category) {
@@ -505,11 +867,21 @@ JSON format:
                 }
                 // Convertir les activités en IDs
                 if (parsedResponse.activities) {
-                    parsedResponse.activities = parsedResponse.activities.map((activityName) => this.findActivityId(activityName, activitiesData));
+                    parsedResponse.activities = parsedResponse.activities.map((activityName) => {
+                        const existingId = this.extractMongoId(activityName);
+                        if (existingId)
+                            return existingId;
+                        return this.findActivityId(this.getEntityLabel(activityName), activitiesData);
+                    });
                 }
                 // Convertir les industries en IDs
                 if (parsedResponse.industries) {
-                    parsedResponse.industries = parsedResponse.industries.map((industryName) => this.findIndustryId(industryName, industriesData));
+                    parsedResponse.industries = parsedResponse.industries.map((industryName) => {
+                        const existingId = this.extractMongoId(industryName);
+                        if (existingId)
+                            return existingId;
+                        return this.findIndustryId(this.getEntityLabel(industryName), industriesData);
+                    });
                 }
                 // Convertir les langues en IDs
                 if (parsedResponse.skills?.languages) {
@@ -543,36 +915,108 @@ JSON format:
                         }));
                     }
                 }
-                // Convertir la devise en ID si l'IA en a suggéré une
-                if (parsedResponse.commission?.currency && currenciesData && currenciesData.length > 0) {
-                    const originalCurrency = parsedResponse.commission.currency;
-                    const currencyId = this.findCurrencyId(originalCurrency, currenciesData);
-                    parsedResponse.commission.currency = currencyId;
-                    console.log(`💰 Conversion devise: "${originalCurrency}" → ${currencyId}`);
+                // Valider et structurer la devise
+                // Valider et structurer la devise et les champs de commission
+                if (parsedResponse.commission) {
+                    // 1. Currency validation
+                    let currencyValue = parsedResponse.commission.currency;
+                    // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
+                    // Cas 1: L'IA a retourné un objet avec $oid (format demandé)
+                    if (currencyValue && typeof currencyValue === 'object' && currencyValue.$oid) {
+                        // Vérifier si c'est un ObjectId valide (24 chars hex)
+                        const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(currencyValue.$oid);
+                        if (!isValidObjectId) {
+                            console.log(`⚠️ Currency $oid "${currencyValue.$oid}" n'est pas un ID valide. Recherche par code...`);
+                            // C'est probablement un code comme "EUR" ms dans le champ $oid
+                            const currencyId = this.findCurrencyId(currencyValue.$oid, currenciesData || []);
+                            parsedResponse.commission.currency = { $oid: currencyId };
+                        }
+                        // Sinon, c'est un bon ID, on garde tel quel
+                    }
+                    // Cas 2: L'IA a retourné une string (code ou ID)
+                    else if (currencyValue && typeof currencyValue === 'string') {
+                        const currencyId = this.findCurrencyId(currencyValue, currenciesData || []);
+                        parsedResponse.commission.currency = { $oid: currencyId };
+                    }
+                    // Cas 3: Pas de devise ou format invalide -> Default EUR object
+                    else {
+                        const defaultCurrencyId = currenciesData && currenciesData.length > 0
+                            ? (currenciesData.find((c) => c.code === 'EUR')?._id || currenciesData[0]._id)
+                            : "eur-id-placeholder";
+                        parsedResponse.commission.currency = { $oid: defaultCurrencyId };
+                    }
+                    // 2. Strict type enforcement + defaults for commission fields
+                    // Defaults (used only when AI returned 0/null/missing):
+                    //   commission_per_call: 2   (per successful call)
+                    //   transactionCommission: 25 (per closed transaction)
+                    //   bonusAmount: 100         (bonus when minimumVolume reached)
+                    //   minimumVolume: 50 Calls / Monthly
+                    const toNumber = (val) => typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
+                    const parsedPerCall = toNumber(parsedResponse.commission.commission_per_call ?? parsedResponse.commission.commissionPerCall);
+                    parsedResponse.commission.commission_per_call = parsedPerCall > 0 ? parsedPerCall : 2;
+                    delete parsedResponse.commission.commissionPerCall;
+                    const parsedTransComm = toNumber(parsedResponse.commission.transactionCommission);
+                    parsedResponse.commission.transactionCommission = parsedTransComm > 0 ? parsedTransComm : 25;
+                    const parsedBonus = toNumber(parsedResponse.commission.bonusAmount);
+                    parsedResponse.commission.bonusAmount = parsedBonus > 0 ? parsedBonus : 100;
+                    // minimumVolume — with defaults
+                    if (parsedResponse.commission.minimumVolume) {
+                        const amtRaw = parsedResponse.commission.minimumVolume.amount;
+                        const amtNum = toNumber(amtRaw);
+                        parsedResponse.commission.minimumVolume.amount = amtNum > 0 ? String(amtNum) : "50";
+                        parsedResponse.commission.minimumVolume.unit = parsedResponse.commission.minimumVolume.unit || "Calls";
+                        parsedResponse.commission.minimumVolume.period = parsedResponse.commission.minimumVolume.period || "Monthly";
+                    }
+                    else {
+                        parsedResponse.commission.minimumVolume = {
+                            amount: "50",
+                            period: "Monthly",
+                            unit: "Calls"
+                        };
+                    }
+                    // additionalDetails must be string
+                    parsedResponse.commission.additionalDetails = parsedResponse.commission.additionalDetails || "";
                 }
                 // Convertir les timezones en IDs avec contexte intelligent
                 const timezoneContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
+                // STEP 1: Determine the timezone that MUST be used = primary TZ of destination_zone country
+                const destinationCountry = this.getCountryById(countriesData, parsedResponse.destination_zone);
+                const destinationCountryName = destinationCountry ? this.getCountryCommonName(destinationCountry) : '';
+                const destinationCca2 = destinationCountry?.cca2 || '';
+                const enforcedTimezone = this.findTimezoneForCountry(destinationCountry, timezonesData);
+                const enforcedTimezoneId = enforcedTimezone?.id || null;
+                const enforcedTimezoneName = enforcedTimezone?.zoneName ||
+                    (destinationCca2 ? this.COUNTRY_TIMEZONE_MAP[String(destinationCca2).toUpperCase()] || '' : '');
+                if (enforcedTimezoneId) {
+                    console.log(`🕒 TIMEZONE ENFORCED from destination "${destinationCountryName}" (${destinationCca2}) → ${enforcedTimezoneName} (${enforcedTimezoneId})`);
+                }
+                else if (destinationCountryName) {
+                    console.warn(`⚠️ Aucune timezone trouvée pour le pays "${destinationCountryName}" (${destinationCca2})`);
+                }
                 // Gérer l'ancien format (schedule.schedules) pour rétrocompatibilité
                 if (parsedResponse.schedule?.schedules && timezonesData) {
                     parsedResponse.schedule.schedules = parsedResponse.schedule.schedules.map((schedule) => ({
                         ...schedule,
-                        timezone: this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, timezoneContext)
+                        timezone: enforcedTimezoneId ||
+                            this.findTimezoneId(schedule.timezone || 'UTC', timezonesData, timezoneContext),
                     }));
                 }
                 // Gérer le nouveau format (availability.time_zone)
-                if (parsedResponse.availability?.time_zone && timezonesData) {
+                if (parsedResponse.availability && timezonesData) {
                     const originalTimezoneName = parsedResponse.availability.time_zone;
-                    const timezoneId = this.findTimezoneId(originalTimezoneName, timezonesData, timezoneContext);
-                    parsedResponse.availability.time_zone = timezoneId;
-                    // Mettre à jour la currency basée sur la timezone
-                    if (parsedResponse.commission) {
-                        const currencyCode = this.getCurrencyFromTimezone(originalTimezoneName);
-                        if (currenciesData && currenciesData.length > 0) {
-                            parsedResponse.commission.currency = this.findCurrencyId(currencyCode, currenciesData);
-                        }
-                        else {
-                            parsedResponse.commission.currency = currencyCode;
-                        }
+                    const timezoneId = enforcedTimezoneId ||
+                        (originalTimezoneName
+                            ? this.findTimezoneId(originalTimezoneName, timezonesData, timezoneContext)
+                            : null);
+                    if (timezoneId) {
+                        parsedResponse.availability.time_zone = timezoneId;
+                    }
+                    // Mettre à jour la currency en se basant sur le NOM IANA de la timezone forcée
+                    const tzNameForCurrency = enforcedTimezoneName || originalTimezoneName || '';
+                    if (parsedResponse.commission && currenciesData && currenciesData.length > 0 && tzNameForCurrency) {
+                        const currencyCode = this.getCurrencyFromTimezone(tzNameForCurrency);
+                        const currencyId = this.findCurrencyId(currencyCode, currenciesData);
+                        parsedResponse.commission.currency = { $oid: currencyId };
                     }
                 }
                 // Convertir les territories en IDs
@@ -590,6 +1034,7 @@ JSON format:
                 if (parsedResponse.schedule?.timeZones && timezonesData) {
                     parsedResponse.schedule.timeZones = parsedResponse.schedule.timeZones.map((tz) => this.findTimezoneId(tz, timezonesData, timezoneContext));
                 }
+                this.enrichGigResponseMeta(parsedResponse, countriesData, timezonesData, currenciesData);
                 return parsedResponse;
             }
             catch (error) {
@@ -626,25 +1071,14 @@ Return JSON in this exact format:
   "technical": [{"skill": "skillName", "level": 4, "details": "Why this skill is relevant"}]
 }`;
         return retryWithBackoff(async () => {
-            const completion = await getOpenAIClient().chat.completions.create({
-                model: 'gpt-4',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful assistant that suggests relevant skills for job positions. IMPORTANT: All responses MUST be in English only. Return only valid JSON.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+            const { content } = await callLLMWithFallback({
+                systemPrompt: 'You are a helpful assistant that suggests relevant skills for job positions. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write the "details" fields in that EXACT same language. Do NOT translate to English. Keep skill names, language names, ISO codes and proficiency codes untouched. Return only valid JSON.',
+                userPrompt: prompt,
+                openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
-                max_tokens: 1000
+                maxTokens: 1000,
+                forceJson: true,
             });
-            const content = completion.choices[0].message.content;
-            if (!content) {
-                throw new Error('No content received from OpenAI');
-            }
             try {
                 const parsedResponse = this.parseOpenAIResponse(content);
                 // Convertir les langues en IDs
@@ -717,32 +1151,21 @@ Format your response as a JSON object with the following structure:
   "flexibilityRecommendations": ["Recommendation 1", "Recommendation 2", ...]
 }`;
         return retryWithBackoff(async () => {
-            const completion = await getOpenAIClient().chat.completions.create({
-                model: 'gpt-4',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. IMPORTANT: All responses MUST be in English only.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+            const { content } = await callLLMWithFallback({
+                systemPrompt: 'You are a helpful assistant that provides timezone and scheduling recommendations for global business operations. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write coverageAnalysis and flexibilityRecommendations in that EXACT same language. Do NOT translate to English. Keep IANA timezone identifiers and 24-hour time strings untouched.',
+                userPrompt: prompt,
+                openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
-                max_tokens: 500
+                maxTokens: 500,
+                forceJson: true,
             });
-            const content = completion.choices[0].message.content;
-            if (!content) {
-                throw new Error('No content received from OpenAI');
-            }
             try {
                 return this.parseOpenAIResponse(content);
             }
             catch (error) {
-                console.error('Error parsing OpenAI response:', error);
+                console.error('Error parsing AI response:', error);
                 console.error('Raw response:', content);
-                throw new Error('Invalid response format from OpenAI');
+                throw new Error('Invalid response format from AI');
             }
         });
     }
@@ -761,32 +1184,21 @@ Description: ${description}
 
 Example response format: ["US", "CA", "UK", "DE"]`;
         return retryWithBackoff(async () => {
-            const completion = await getOpenAIClient().chat.completions.create({
-                model: "gpt-3.5-turbo",
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. IMPORTANT: All responses MUST be in English only."
-                    },
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ],
+            const { content } = await callLLMWithFallback({
+                systemPrompt: 'You are a helpful assistant that suggests appropriate destination zones for job postings based on the job details provided. Respond strictly with a JSON array of ISO country codes (e.g. ["FR","CA","UK"]).',
+                userPrompt: prompt,
+                openaiModel: DEFAULT_OPENAI_FAST_MODEL,
                 temperature: 0.7,
-                max_tokens: 100,
+                maxTokens: 200,
+                forceJson: true,
             });
-            const content = completion.choices[0].message.content;
-            if (!content) {
-                throw new Error('No content received from OpenAI');
-            }
             try {
                 return this.parseOpenAIResponse(content);
             }
             catch (error) {
-                console.error('Error parsing OpenAI response:', error);
+                console.error('Error parsing AI response:', error);
                 console.error('Raw response:', content);
-                throw new Error('Invalid response format from OpenAI');
+                throw new Error('Invalid response format from AI');
             }
         });
     }
@@ -840,8 +1252,12 @@ Example response format: ["US", "CA", "UK", "DE"]`;
      * Trouve l'ID d'une activité par son nom avec correspondance approximative
      */
     static findActivityId(activityName, activitiesList) {
+        if (!activityName?.trim() || !activitiesList?.length) {
+            return activitiesList?.[0]?._id || 'unknown-activity-id';
+        }
+        const safeName = (a) => (typeof a?.name === 'string' ? a.name : '');
         // Recherche exacte d'abord
-        let activity = activitiesList.find(a => a.name.toLowerCase() === activityName.toLowerCase());
+        let activity = activitiesList.find(a => safeName(a).toLowerCase() === activityName.toLowerCase());
         if (activity) {
             return activity._id;
         }
@@ -849,7 +1265,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         const normalizedSearchName = activityName.toLowerCase().trim();
         // Essayer de trouver une correspondance partielle
         activity = activitiesList.find(a => {
-            const normalizedActivityName = a.name.toLowerCase().trim();
+            const normalizedActivityName = safeName(a).toLowerCase().trim();
+            if (!normalizedActivityName)
+                return false;
             return normalizedActivityName.includes(normalizedSearchName) ||
                 normalizedSearchName.includes(normalizedActivityName);
         });
@@ -871,7 +1289,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         };
         const mappedName = manualMappings[normalizedSearchName];
         if (mappedName) {
-            activity = activitiesList.find(a => a.name.toLowerCase() === mappedName.toLowerCase());
+            activity = activitiesList.find(a => safeName(a).toLowerCase() === mappedName.toLowerCase());
             if (activity) {
                 console.log(`🔄 Mapping manuel trouvé: "${activityName}" → "${activity.name}" (${activity._id})`);
                 return activity._id;
@@ -892,8 +1310,12 @@ Example response format: ["US", "CA", "UK", "DE"]`;
      * Trouve l'ID d'une industrie par son nom avec correspondance approximative
      */
     static findIndustryId(industryName, industriesList) {
+        if (!industryName?.trim() || !industriesList?.length) {
+            return industriesList?.[0]?._id || 'unknown-industry-id';
+        }
+        const safeName = (i) => (typeof i?.name === 'string' ? i.name : '');
         // Recherche exacte d'abord
-        let industry = industriesList.find(i => i.name.toLowerCase() === industryName.toLowerCase());
+        let industry = industriesList.find(i => safeName(i).toLowerCase() === industryName.toLowerCase());
         if (industry) {
             return industry._id;
         }
@@ -901,7 +1323,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         const normalizedSearchName = industryName.toLowerCase().trim();
         // Essayer de trouver une correspondance partielle
         industry = industriesList.find(i => {
-            const normalizedIndustryName = i.name.toLowerCase().trim();
+            const normalizedIndustryName = safeName(i).toLowerCase().trim();
+            if (!normalizedIndustryName)
+                return false;
             return normalizedIndustryName.includes(normalizedSearchName) ||
                 normalizedSearchName.includes(normalizedIndustryName);
         });
@@ -1058,8 +1482,9 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     static findTimezoneId(timezoneName, timezonesList, context) {
         if (!timezonesList || timezonesList.length === 0)
             return timezoneName;
-        // Recherche exacte par zoneName
-        let timezone = timezonesList.find(tz => tz.zoneName === timezoneName);
+        const tzLabel = (tz) => tz.zoneName || tz.name || '';
+        // Recherche exacte par nom IANA (zoneName ou name depuis MongoDB)
+        let timezone = timezonesList.find(tz => tzLabel(tz) === timezoneName);
         if (timezone)
             return timezone._id;
         // Analyse contextuelle pour déterminer la région probable
@@ -1067,8 +1492,11 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         if (contextualMapping)
             return contextualMapping;
         // Recherche par nom de pays ou zone
-        timezone = timezonesList.find(tz => tz.countryName?.toLowerCase().includes(timezoneName.toLowerCase()) ||
-            tz.zoneName?.toLowerCase().includes(timezoneName.toLowerCase()));
+        timezone = timezonesList.find(tz => {
+            const label = tzLabel(tz).toLowerCase();
+            return tz.countryName?.toLowerCase().includes(timezoneName.toLowerCase()) ||
+                label.includes(timezoneName.toLowerCase());
+        });
         if (timezone)
             return timezone._id;
         // Mapping des timezones communes
@@ -1083,14 +1511,14 @@ Example response format: ["US", "CA", "UK", "DE"]`;
         };
         const mappedZone = timezoneMapping[timezoneName.toUpperCase()];
         if (mappedZone) {
-            timezone = timezonesList.find(tz => tz.zoneName === mappedZone);
+            timezone = timezonesList.find(tz => tzLabel(tz) === mappedZone);
             if (timezone)
                 return timezone._id;
         }
         // Fallback intelligent basé sur le contexte
-        timezone = timezonesList.find(tz => tz.zoneName === 'Europe/Paris') || // France par défaut
-            timezonesList.find(tz => tz.zoneName === 'UTC') ||
-            timezonesList.find(tz => tz.zoneName.includes('UTC')) ||
+        timezone = timezonesList.find(tz => tzLabel(tz) === 'Europe/Paris') ||
+            timezonesList.find(tz => tzLabel(tz) === 'UTC') ||
+            timezonesList.find(tz => tzLabel(tz).includes('UTC')) ||
             timezonesList[0];
         return timezone ? timezone._id : timezoneName;
     }
@@ -1248,3 +1676,52 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     }
 }
 exports.AIService = AIService;
+/** Primary IANA timezone per country (cca2 → zone name) */
+AIService.COUNTRY_TIMEZONE_MAP = {
+    FR: 'Europe/Paris',
+    BE: 'Europe/Brussels',
+    CH: 'Europe/Zurich',
+    DE: 'Europe/Berlin',
+    ES: 'Europe/Madrid',
+    IT: 'Europe/Rome',
+    NL: 'Europe/Amsterdam',
+    LU: 'Europe/Luxembourg',
+    PT: 'Europe/Lisbon',
+    GB: 'Europe/London',
+    UK: 'Europe/London',
+    IE: 'Europe/Dublin',
+    SE: 'Europe/Stockholm',
+    NO: 'Europe/Oslo',
+    DK: 'Europe/Copenhagen',
+    FI: 'Europe/Helsinki',
+    PL: 'Europe/Warsaw',
+    AT: 'Europe/Vienna',
+    CZ: 'Europe/Prague',
+    GR: 'Europe/Athens',
+    RO: 'Europe/Bucharest',
+    HU: 'Europe/Budapest',
+    MA: 'Africa/Casablanca',
+    DZ: 'Africa/Algiers',
+    TN: 'Africa/Tunis',
+    EG: 'Africa/Cairo',
+    SN: 'Africa/Dakar',
+    CI: 'Africa/Abidjan',
+    NG: 'Africa/Lagos',
+    KE: 'Africa/Nairobi',
+    ZA: 'Africa/Johannesburg',
+    US: 'America/New_York',
+    CA: 'America/Toronto',
+    MX: 'America/Mexico_City',
+    BR: 'America/Sao_Paulo',
+    AR: 'America/Argentina/Buenos_Aires',
+    AU: 'Australia/Sydney',
+    NZ: 'Pacific/Auckland',
+    JP: 'Asia/Tokyo',
+    CN: 'Asia/Shanghai',
+    IN: 'Asia/Kolkata',
+    SG: 'Asia/Singapore',
+    AE: 'Asia/Dubai',
+    SA: 'Asia/Riyadh',
+    TR: 'Europe/Istanbul',
+    RU: 'Europe/Moscow',
+};

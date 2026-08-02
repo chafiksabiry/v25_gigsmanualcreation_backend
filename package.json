@@ -5,10 +5,15 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "nodemon --exec npx ts-node src/server.ts",
-    "build": "tsc"
+    "build": "node node_modules/typescript/lib/tsc.js",
+    "backfill:setup-steps": "ts-node src/scripts/backfillSetupSteps.ts",
+    "backfill:setup-steps:dry": "ts-node src/scripts/backfillSetupSteps.ts --dry-run",
+    "backfill:setup-steps:force": "ts-node src/scripts/backfillSetupSteps.ts --force"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
     "@types/bcryptjs": "^3.0.0",
+    "axios": "^1.13.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
@@ -21,6 +26,7 @@
     "multer-storage-cloudinary": "^4.0.0",
     "openai": "^4.104.0",
     "streamifier": "^0.1.1",
+    "typescript": "^5.3.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -30,7 +36,6 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^20.11.16",
     "@types/streamifier": "^0.1.2",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
+    "ts-node-dev": "^2.0.0"
   }
 }

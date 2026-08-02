@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CompanyModel = exports.User = exports.TimezoneSchema = exports.Timezone = exports.SoftSkillSchema = exports.SoftSkill = exports.TechnicalSkillSchema = exports.TechnicalSkill = exports.ProfessionalSkillSchema = exports.ProfessionalSkill = exports.CountrySchema = exports.Country = exports.LanguageSchema = exports.Language = exports.IndustrySchema = exports.Industry = exports.ActivitySchema = exports.Activity = exports.LeadSchema = exports.Lead = exports.GigSchema = exports.Gig = void 0;
+exports.CompanyModel = exports.User = exports.TimezoneSchema = exports.Timezone = exports.SoftSkillSchema = exports.SoftSkill = exports.TechnicalSkillSchema = exports.TechnicalSkill = exports.ProfessionalSkillSchema = exports.ProfessionalSkill = exports.SectorSchema = exports.Sector = exports.CountrySchema = exports.Country = exports.LanguageSchema = exports.Language = exports.IndustrySchema = exports.Industry = exports.ActivitySchema = exports.Activity = exports.LeadSchema = exports.Lead = exports.GigSchema = exports.Gig = void 0;
 var gigModel_1 = require("./gigModel");
 Object.defineProperty(exports, "Gig", { enumerable: true, get: function () { return gigModel_1.Gig; } });
 Object.defineProperty(exports, "GigSchema", { enumerable: true, get: function () { return gigModel_1.GigSchema; } });
@@ -22,6 +22,9 @@ Object.defineProperty(exports, "LanguageSchema", { enumerable: true, get: functi
 var countryModel_1 = require("./countryModel");
 Object.defineProperty(exports, "Country", { enumerable: true, get: function () { return countryModel_1.Country; } });
 Object.defineProperty(exports, "CountrySchema", { enumerable: true, get: function () { return countryModel_1.CountrySchema; } });
+var sectorModel_1 = require("./sectorModel");
+Object.defineProperty(exports, "Sector", { enumerable: true, get: function () { return sectorModel_1.Sector; } });
+Object.defineProperty(exports, "SectorSchema", { enumerable: true, get: function () { return sectorModel_1.SectorSchema; } });
 var skillModels_1 = require("./skillModels");
 Object.defineProperty(exports, "ProfessionalSkill", { enumerable: true, get: function () { return skillModels_1.ProfessionalSkill; } });
 Object.defineProperty(exports, "ProfessionalSkillSchema", { enumerable: true, get: function () { return skillModels_1.ProfessionalSkillSchema; } });

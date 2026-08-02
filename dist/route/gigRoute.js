@@ -14,6 +14,10 @@ router.get("/:id/details", gigController_1.GigController.getGigDetailsById);
 // Gig Destination Zone
 router.get("/:id/destination-zone", gigController_1.GigController.getGigDestinationZoneById);
 router.put("/:id", gigController_1.GigController.updateGig);
+// Per-gig activation checklist — toggle individual `setupSteps.*` flags
+// (telephony, uploadContacts, callScript, knowledgeBase, repOnboarding,
+// sessionPlanning, gigActivation). See `GigController.updateSetupSteps`.
+router.patch("/:id/setup-steps", gigController_1.GigController.updateSetupSteps);
 router.delete("/:id", gigController_1.GigController.deleteGig);
 // Get gigs by userId and companyId
 router.get("/user/:userId", gigController_1.GigController.getGigsByUserId);
