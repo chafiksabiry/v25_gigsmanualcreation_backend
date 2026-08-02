@@ -2,7 +2,7 @@
 // Service pour populer les données avec les détails complets depuis l'API externe
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PopulateService = void 0;
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 class PopulateService {
     /**
      * Populate un objet gig avec les détails complets

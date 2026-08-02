@@ -2,11 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AIController = void 0;
 const countryModel_1 = require("../models/countryModel");
+const currencyModel_1 = require("../models/currencyModel");
+const timezoneModel_1 = require("../models/timezoneModel");
 const aiService_1 = require("../services/aiService");
 const populateService_1 = require("../services/populateService");
 // Configuration de l'API externe
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://api-gigsmanual.harx.ai/api/currencies';
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 // Fonctions pour récupérer les données depuis l'API externe
 async function fetchActivities() {
     try {
@@ -66,62 +67,127 @@ async function fetchSkills() {
 }
 async function fetchCurrencies() {
     try {
-        console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-        const response = await fetch(CURRENCIES_API_URL);
-        const data = await response.json();
-        if (data.success && data.data) {
-            console.log(`✅ ${data.data.length} currencies fetched successfully`);
-            return data.data.filter(currency => currency.isActive);
+        console.log(`🔍 Reading currencies directly from MongoDB collection "currencies"`);
+        const docs = await currencyModel_1.Currency.find({ isActive: true })
+            .select({ code: 1, name: 1, symbol: 1, isActive: 1 })
+            .lean();
+        const currencies = docs.map((doc) => ({
+            _id: String(doc._id),
+            code: doc.code,
+            name: doc.name,
+            symbol: doc.symbol,
+            isActive: doc.isActive,
+        }));
+        if (currencies.length > 0) {
+            console.log(`✅ ${currencies.length} currencies loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample currency:', JSON.stringify(currencies[0], null, 2));
+            }
+            return currencies;
         }
-        else {
-            console.error('Error in currencies API response:', data);
-            return [];
-        }
+        console.warn('⚠️ Collection "currencies" is empty');
+        throw new Error('Empty currency collection');
     }
     catch (error) {
-        console.error('Error fetching currencies:', error);
-        return [];
+        console.error('Error reading currencies from MongoDB:', error);
+        console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
+        return [
+            {
+                "_id": "eur-id-placeholder",
+                "code": "EUR",
+                "name": "Euro",
+                "symbol": "€",
+                "isActive": true
+            },
+            {
+                "_id": "usd-id-placeholder",
+                "code": "USD",
+                "name": "United States dollar",
+                "symbol": "$",
+                "isActive": true
+            },
+            {
+                "_id": "gbp-id-placeholder",
+                "code": "GBP",
+                "name": "British pound",
+                "symbol": "£",
+                "isActive": true
+            }
+        ];
     }
 }
 async function fetchTimezones() {
     try {
-        const response = await fetch(`${EXTERNAL_API_BASE}/timezones`);
-        const data = await response.json();
-        return data.success ? data.data : [];
+        console.log(`🔍 Reading timezones directly from MongoDB collection "timezones"`);
+        // NB: real documents in collection use `zoneName` + `countryCode` + `gmtOffset` + `countryName`
+        // — older schema with `name` / `offset` is kept as alias fallback below.
+        const docs = await timezoneModel_1.Timezone.collection
+            .find({}, {
+            projection: {
+                zoneName: 1,
+                countryCode: 1,
+                countryName: 1,
+                gmtOffset: 1,
+                name: 1,
+                offset: 1,
+                abbreviation: 1,
+                description: 1,
+            },
+        })
+            .toArray();
+        const timezones = docs.map((doc) => ({
+            _id: String(doc._id),
+            zoneName: doc.zoneName || doc.name || '',
+            name: doc.zoneName || doc.name || '',
+            countryCode: doc.countryCode || '',
+            countryName: doc.countryName || '',
+            gmtOffset: doc.gmtOffset ?? null,
+            offset: doc.offset || (typeof doc.gmtOffset === 'number'
+                ? `${doc.gmtOffset >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(doc.gmtOffset) / 3600)).padStart(2, '0')}:${String(Math.floor((Math.abs(doc.gmtOffset) % 3600) / 60)).padStart(2, '0')}`
+                : ''),
+            abbreviation: doc.abbreviation || '',
+            description: doc.description || '',
+        }));
+        if (timezones.length > 0) {
+            console.log(`✅ ${timezones.length} timezones loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample timezone:', JSON.stringify(timezones[0], null, 2));
+            }
+            return timezones;
+        }
+        console.warn('⚠️ Collection "timezones" is empty');
+        return [];
     }
     catch (error) {
-        console.error('Error fetching timezones:', error);
+        console.error('Error reading timezones from MongoDB:', error);
         return [];
     }
 }
-// Fonction pour récupérer les pays depuis l'API externe
 async function fetchCountries() {
     try {
-        const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
-        console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
-        const response = await fetch(countriesApiUrl);
-        const data = await response.json();
-        if (data.success && data.data) {
-            console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
-            return data.data;
+        console.log(`🔍 Reading countries directly from MongoDB collection "countries"`);
+        const docs = await countryModel_1.Country.find({})
+            .select({ name: 1, cca2: 1, flags: 1 })
+            .lean();
+        const countries = docs.map((doc) => ({
+            _id: String(doc._id),
+            name: doc.name,
+            cca2: doc.cca2,
+            flags: doc.flags || {},
+        }));
+        if (countries.length > 0) {
+            console.log(`✅ ${countries.length} countries loaded from MongoDB`);
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Sample country:', JSON.stringify({ _id: countries[0]._id, name: countries[0].name, cca2: countries[0].cca2 }, null, 2));
+            }
+            return countries;
         }
-        else {
-            console.error('Erreur réponse API countries:', data);
-            return [];
-        }
+        console.warn('⚠️ Collection "countries" is empty');
+        return [];
     }
     catch (error) {
-        console.error('Error fetching countries from API:', error);
-        // Fallback vers notre base de données locale en cas d'erreur
-        try {
-            const countries = await countryModel_1.Country.find({}, { name: 1, cca2: 1, flags: 1 }).lean();
-            console.log(`⚠️  Fallback: ${countries.length} pays récupérés depuis MongoDB`);
-            return countries || [];
-        }
-        catch (dbError) {
-            console.error('Error fallback database:', dbError);
-            return [];
-        }
+        console.error('Error reading countries from MongoDB:', error);
+        return [];
     }
 }
 class AIController {
@@ -355,21 +421,18 @@ class AIController {
                     }
                 },
                 commission: {
-                    base: "Base + Commission",
-                    baseAmount: 0,
-                    bonus: "Performance Bonus",
-                    bonusAmount: 150,
-                    structure: "",
-                    currency: "EUR",
+                    commission_per_call: 0,
+                    bonusAmount: "150",
+                    currency: {
+                        $oid: currenciesData.find((c) => c.code === 'EUR')?._id ||
+                            currenciesData[0]?._id || "eur-id-placeholder"
+                    },
                     minimumVolume: {
-                        amount: 25,
+                        amount: "25",
                         period: "Monthly",
                         unit: "Calls"
                     },
-                    transactionCommission: {
-                        type: "Fixed Amount",
-                        amount: 50
-                    },
+                    transactionCommission: 50, // Number
                     additionalDetails: "Commission structure based on performance metrics and call quality. Additional bonuses available for exceeding monthly targets."
                 },
                 team: {
@@ -594,7 +657,7 @@ class AIController {
             const testResults = activities.map((activityName) => {
                 // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
                 // Recherche exacte d'abord
-                let activity = activitiesData.find(a => a.name.toLowerCase() === activityName.toLowerCase());
+                let activity = activitiesData.find((a) => a.name.toLowerCase() === activityName.toLowerCase());
                 let matchType = 'exact';
                 let foundId = '';
                 if (activity) {
@@ -603,7 +666,7 @@ class AIController {
                 else {
                     // Recherche approximative
                     const normalizedSearchName = activityName.toLowerCase().trim();
-                    activity = activitiesData.find(a => {
+                    activity = activitiesData.find((a) => {
                         const normalizedActivityName = a.name.toLowerCase().trim();
                         return normalizedActivityName.includes(normalizedSearchName) ||
                             normalizedSearchName.includes(normalizedActivityName);
@@ -627,7 +690,7 @@ class AIController {
                         };
                         const mappedName = manualMappings[normalizedSearchName];
                         if (mappedName) {
-                            activity = activitiesData.find(a => a.name.toLowerCase() === mappedName.toLowerCase());
+                            activity = activitiesData.find((a) => a.name.toLowerCase() === mappedName.toLowerCase());
                             if (activity) {
                                 foundId = activity._id;
                                 matchType = 'manual_mapping';
@@ -655,16 +718,16 @@ class AIController {
                 results: testResults,
                 summary: {
                     total: testResults.length,
-                    successful: testResults.filter(r => r.success).length,
-                    failed: testResults.filter(r => !r.success).length,
+                    successful: testResults.filter((r) => r.success).length,
+                    failed: testResults.filter((r) => !r.success).length,
                     matchTypes: {
-                        exact: testResults.filter(r => r.matchType === 'exact').length,
-                        partial: testResults.filter(r => r.matchType === 'partial').length,
-                        manual_mapping: testResults.filter(r => r.matchType === 'manual_mapping').length,
-                        default_fallback: testResults.filter(r => r.matchType === 'default_fallback').length
+                        exact: testResults.filter((r) => r.matchType === 'exact').length,
+                        partial: testResults.filter((r) => r.matchType === 'partial').length,
+                        manual_mapping: testResults.filter((r) => r.matchType === 'manual_mapping').length,
+                        default_fallback: testResults.filter((r) => r.matchType === 'default_fallback').length
                     }
                 },
-                availableActivities: activitiesData.map(a => ({ id: a._id, name: a.name }))
+                availableActivities: activitiesData.map((a) => ({ id: a._id, name: a.name }))
             });
         }
         catch (error) {

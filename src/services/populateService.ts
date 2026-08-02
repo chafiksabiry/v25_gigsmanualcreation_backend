@@ -1,6 +1,6 @@
 // Service pour populer les données avec les détails complets depuis l'API externe
 
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 
 // Types pour les réponses de l'API externe
 interface ApiResponse<T> {
@@ -97,7 +97,7 @@ export class PopulateService {
     try {
       const response = await fetch(`${EXTERNAL_API_BASE}/activities`);
       const data = await response.json() as ApiResponse<Activity[]>;
-      
+
       if (!data.success) return activityIds.map(id => ({ _id: id, name: 'Unknown Activity', description: '', category: '', isActive: true }));
 
       return activityIds.map(id => {
@@ -117,7 +117,7 @@ export class PopulateService {
     try {
       const response = await fetch(`${EXTERNAL_API_BASE}/industries`);
       const data = await response.json() as ApiResponse<Industry[]>;
-      
+
       if (!data.success) return industryIds.map(id => ({ _id: id, name: 'Unknown Industry', description: '', isActive: true }));
 
       return industryIds.map(id => {
@@ -137,7 +137,7 @@ export class PopulateService {
     try {
       const response = await fetch(`${EXTERNAL_API_BASE}/languages`);
       const data = await response.json() as ApiResponse<Language[]>;
-      
+
       if (!data.success) return languageData;
 
       return languageData.map(langData => {
@@ -160,7 +160,7 @@ export class PopulateService {
     try {
       const response = await fetch(`${EXTERNAL_API_BASE}/skills/${skillType}`);
       const data = await response.json() as ApiResponse<Skill[]>;
-      
+
       if (!data.success) return skillsData;
 
       return skillsData.map(skillData => {
@@ -182,12 +182,12 @@ export class PopulateService {
   static async getPopulatedGig(gigId: string, options: PopulateOptions = {}) {
     // Cette méthode serait utilisée pour récupérer un gig complet
     // depuis votre base de données et le populer avec les détails
-    
+
     // Exemple d'implémentation:
     // 1. Récupérer le gig depuis MongoDB
     // 2. Populer avec les détails depuis l'API externe
     // 3. Retourner le gig complet
-    
+
     console.log(`Getting populated gig ${gigId} with options:`, options);
     // Implementation would go here
   }

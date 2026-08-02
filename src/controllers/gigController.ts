@@ -16,7 +16,7 @@ const getCountryCode = (input: string): string | null => {
   if (countries.isValid(input) && input.length === 2) {
     return input.toUpperCase();
   }
-  
+
   // Essayer de trouver le code à partir du nom du pays en français
   let code = countries.getAlpha2Code(input, 'fr');
   if (!code) {
@@ -45,9 +45,9 @@ export class GigController {
 
       // Valider que destination_zone est un ObjectId valide si fourni
       if (req.body.destination_zone && !mongoose.Types.ObjectId.isValid(req.body.destination_zone)) {
-        return res.status(400).json({ 
-          message: "destination_zone must be a valid MongoDB ObjectId", 
-          data: null 
+        return res.status(400).json({
+          message: "destination_zone must be a valid MongoDB ObjectId",
+          data: null
         });
       }
 
@@ -117,11 +117,11 @@ export class GigController {
     try {
       const id = req.params.id;
       const updateData = req.body;
-      
+
       console.log('🔍 BACKEND - Update gig request received');
       console.log('🔍 BACKEND - Gig ID:', id);
       console.log('🔍 BACKEND - Update data:', JSON.stringify(updateData, null, 2));
-      
+
       if (!mongoose.Types.ObjectId.isValid(id)) {
         console.log('❌ BACKEND - Invalid Gig ID format:', id);
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
@@ -130,15 +130,70 @@ export class GigController {
       // Valider que destination_zone est un ObjectId valide si fourni dans les données de mise à jour
       if (updateData.destination_zone && !mongoose.Types.ObjectId.isValid(updateData.destination_zone)) {
         console.log('❌ BACKEND - Invalid destination_zone ObjectId:', updateData.destination_zone);
-        return res.status(400).json({ 
-          message: "destination_zone must be a valid MongoDB ObjectId", 
-          data: null 
+        return res.status(400).json({
+          message: "destination_zone must be a valid MongoDB ObjectId",
+          data: null
         });
+      }
+
+      // Si on active le gig, vérifier le solde de la company + setupSteps
+      if (updateData.status === 'active') {
+        try {
+          const existingGig = await GigService.getGigById(id);
+          if (existingGig) {
+            const REQUIRED_SETUP_KEYS = [
+              'telephony',
+              'uploadContacts',
+              'callScript',
+              'knowledgeBase',
+              'repOnboarding',
+              'sessionPlanning',
+            ] as const;
+            const steps = (existingGig as any).setupSteps || {};
+            const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
+            if (missingSteps.length > 0) {
+              console.log(
+                `❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`,
+                missingSteps.join(', ')
+              );
+              return res.status(400).json({
+                message:
+                  'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
+                data: { missingSteps },
+              });
+            }
+          }
+          if (existingGig && existingGig.companyId) {
+            const companyId = existingGig.companyId._id || existingGig.companyId;
+            const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL || 'https://v25comporchestratorback-production.up.railway.app';
+            console.log(`🔍 BACKEND - Verifying balance for company ${companyId} at ${compOrchestratorUrl}`);
+            const balanceResponse = await fetch(`${compOrchestratorUrl}/api/escrow/wallet/${companyId}`);
+            if (balanceResponse.ok) {
+              const balanceData = await balanceResponse.json() as any;
+              console.log(`🔍 BACKEND - Balance data received:`, JSON.stringify(balanceData));
+              if (balanceData.success && balanceData.data) {
+                const balance = balanceData.data.balance || 0;
+                if (balance <= 0) {
+                  console.log(`❌ BACKEND - Insufficient balance (${balance} €) for company ${companyId}`);
+                  return res.status(400).json({
+                    message: "Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.",
+                    data: null
+                  });
+                }
+              }
+            } else {
+              console.warn(`⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`);
+            }
+          }
+        } catch (checkError) {
+          console.error('⚠️ BACKEND - Failed to verify company balance:', checkError);
+          // Permettre de continuer en cas d'erreur de connexion au microservice pour éviter de bloquer l'application
+        }
       }
 
       console.log('🔍 BACKEND - Calling GigService.updateGig...');
       const updatedGig = await GigService.updateGig(id, updateData);
-      
+
       if (!updatedGig) {
         console.log('❌ BACKEND - Gig not found:', id);
         return res.status(404).json({ message: "Gig not found", data: null });
@@ -159,30 +214,105 @@ export class GigController {
     }
   }
 
+  /**
+   * PATCH /gigs/:id/setup-steps
+   *
+   * Updates one or more flags inside the per-gig activation checklist
+   * (`setupSteps`). Accepts a partial body — only provided fields are
+   * touched. Unknown keys are rejected to keep the schema clean.
+   *
+   * Body: { telephony?: boolean, uploadContacts?: boolean, ... }
+   * Returns the updated gig document.
+   */
+  static async updateSetupSteps(req: Request, res: Response) {
+    try {
+      const id = req.params.id;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid Gig ID format', data: null });
+      }
+
+      const allowedKeys = [
+        'telephony',
+        'uploadContacts',
+        'callScript',
+        'knowledgeBase',
+        'repOnboarding',
+        'sessionPlanning',
+        'gigActivation',
+      ] as const;
+
+      const body = req.body || {};
+      const $set: Record<string, boolean> = {};
+      for (const key of allowedKeys) {
+        if (typeof body[key] === 'boolean') {
+          // Use the dotted-path form so mongoose only touches the
+          // requested sub-key without overwriting siblings.
+          $set[`setupSteps.${key}`] = body[key];
+        }
+      }
+
+      if (Object.keys($set).length === 0) {
+        return res.status(400).json({
+          message: 'No valid setupSteps fields provided',
+          data: null,
+        });
+      }
+
+      const updatedGig = await GigService.updateGig(id, $set);
+      if (!updatedGig) {
+        return res.status(404).json({ message: 'Gig not found', data: null });
+      }
+      return res.status(200).json({
+        message: 'Setup steps updated successfully',
+        data: updatedGig,
+      });
+    } catch (error) {
+      console.error('❌ BACKEND - Error in updateSetupSteps:', error);
+      return res.status(500).json({
+        message: 'Failed to update setup steps',
+        data: null,
+      });
+    }
+  }
+
   static async getGigDestinationZoneById(req: Request, res: Response) {
     try {
+      console.log('🔍 getGigDestinationZoneById - Gig ID:', req.params.id);
+
       if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        console.log('❌ Invalid Gig ID format:', req.params.id);
         return res.status(400).json({ message: "Invalid Gig ID format", data: null });
       }
 
       const gig = await GigService.getGigById(req.params.id);
+      console.log('🔍 Gig found:', gig ? 'Yes' : 'No');
+
       if (!gig) {
+        console.log('❌ Gig not found');
         return res.status(404).json({ message: "Gig not found", data: null });
       }
 
       const destinationZone = gig.destination_zone;
+      console.log('🔍 Destination zone:', destinationZone);
+
       if (!destinationZone) {
+        console.log('❌ Destination zone not set for this gig');
         return res.status(404).json({ message: "Destination zone not set", data: null });
       }
 
       // Récupérer les informations du pays depuis la base de données
       const country = await Country.findById(destinationZone).lean();
+      console.log('🔍 Country found:', country ? 'Yes' : 'No');
+
       if (!country) {
+        console.log('❌ Country not found in database for ID:', destinationZone);
         return res.status(404).json({ message: "Country not found in database", data: null });
       }
-      
-      res.status(200).json({ 
-        message: "Gig destination zone retrieved successfully", 
+
+      console.log('✅ Successfully retrieved destination zone:', country.cca2);
+      res.status(200).json({
+        message: "Gig destination zone retrieved successfully",
         data: {
           id: country._id,
           code: country.cca2,
@@ -191,8 +321,13 @@ export class GigController {
         }
       });
     } catch (error) {
-      console.error("Error in getGigDestinationZoneById:", error);
-      res.status(500).json({ message: "Failed to retrieve gig destination zone", data: null });
+      console.error("❌ Error in getGigDestinationZoneById:", error);
+      console.error("❌ Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+      res.status(500).json({
+        message: "Failed to retrieve gig destination zone",
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
+      });
     }
   }
 
@@ -252,10 +387,10 @@ export class GigController {
 
       const gigs = await GigService.getGigsByCompanyId(companyId);
       const hasGigs = gigs.length > 0;
-      
-      res.status(200).json({ 
-        message: "Company gig status retrieved successfully", 
-        data: { hasGigs } 
+
+      res.status(200).json({
+        message: "Company gig status retrieved successfully",
+        data: { hasGigs }
       });
     } catch (error) {
       console.error("Error in hasCompanyGigs:", error);
@@ -272,10 +407,10 @@ export class GigController {
 
       const leads = await Lead.find({ companyId });
       const hasLeads = leads.length > 0;
-      
-      res.status(200).json({ 
-        message: "Company leads status retrieved successfully", 
-        data: { hasLeads } 
+
+      res.status(200).json({
+        message: "Company leads status retrieved successfully",
+        data: { hasLeads }
       });
     } catch (error) {
       console.error("Error in hasCompanyLeads:", error);
@@ -295,9 +430,9 @@ export class GigController {
         return res.status(404).json({ message: "Company not found for this user", data: null });
       }
 
-      res.status(200).json({ 
-        message: "Company retrieved successfully", 
-        data: company 
+      res.status(200).json({
+        message: "Company retrieved successfully",
+        data: company
       });
     } catch (error) {
       console.error("Error in getCompanyByUserId:", error);
@@ -317,9 +452,9 @@ export class GigController {
         return res.status(404).json({ message: "No gigs found for this company", data: null });
       }
 
-      res.status(200).json({ 
-        message: "Last gig retrieved successfully", 
-        data: lastGig 
+      res.status(200).json({
+        message: "Last gig retrieved successfully",
+        data: lastGig
       });
     } catch (error) {
       console.error("Error in getLastGigByCompanyId:", error);
@@ -332,16 +467,16 @@ export class GigController {
       const { dallEUrl, title } = req.body;
 
       if (!dallEUrl) {
-        return res.status(400).json({ 
-          message: "DALL-E URL is required", 
-          data: null 
+        return res.status(400).json({
+          message: "DALL-E URL is required",
+          data: null
         });
       }
 
       if (!title) {
-        return res.status(400).json({ 
-          message: "Title is required", 
-          data: null 
+        return res.status(400).json({
+          message: "Title is required",
+          data: null
         });
       }
 
@@ -356,7 +491,7 @@ export class GigController {
       }
 
       const imageBuffer = await imageResponse.arrayBuffer();
-      
+
       // Convert to base64 for Cloudinary upload
       const base64Image = Buffer.from(imageBuffer).toString('base64');
       const dataURI = `data:image/png;base64,${base64Image}`;
@@ -380,11 +515,11 @@ export class GigController {
       }
 
       const result = await cloudinaryResponse.json() as any;
-      
+
       if (result.secure_url) {
-        res.status(200).json({ 
-          message: "Image uploaded to Cloudinary successfully", 
-          data: { url: result.secure_url } 
+        res.status(200).json({
+          message: "Image uploaded to Cloudinary successfully",
+          data: { url: result.secure_url }
         });
       } else {
         throw new Error('No URL returned from Cloudinary');
@@ -392,9 +527,9 @@ export class GigController {
 
     } catch (error) {
       console.error("Error in uploadDalleImageToCloudinary:", error);
-      res.status(500).json({ 
-        message: (error as Error).message || "Failed to upload image to Cloudinary", 
-        data: null 
+      res.status(500).json({
+        message: (error as Error).message || "Failed to upload image to Cloudinary",
+        data: null
       });
     }
   }

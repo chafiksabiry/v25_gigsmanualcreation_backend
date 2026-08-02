@@ -1,64 +1,18 @@
 import { Request, Response } from 'express';
 import { Country } from '../models/countryModel';
-import { AIService, TimezoneGenerationRequest } from '../services/aiService';
+import { Currency } from '../models/currencyModel';
+import { Timezone } from '../models/timezoneModel';
+import { AIService } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
 
 // Configuration de l'API externe
-const EXTERNAL_API_BASE = process.env.REP_URL || 'https://api-repcreationwizard.harx.ai/api';
-const CURRENCIES_API_URL = process.env.CURRENCIES_API_URL || 'https://api-gigsmanual.harx.ai/api/currencies';
-
-// Types pour les réponses de l'API externe
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  message?: string;
-}
-
-interface Activity {
-  _id: string;
-  name: string;
-  description: string;
-  category: string;
-  isActive: boolean;
-}
-
-interface Industry {
-  _id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-}
-
-interface Language {
-  _id: string;
-  name: string;
-  code: string;
-  nativeName: string;
-}
-
-interface Skill {
-  _id: string;
-  name: string;
-  description: string;
-  category: string;
-  isActive: boolean;
-}
-
-interface Currency {
-  _id: string;
-  code: string;
-  name: string;
-  symbol: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 
 // Fonctions pour récupérer les données depuis l'API externe
-async function fetchActivities(): Promise<Activity[]> {
+async function fetchActivities() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/activities`);
-    const data = await response.json() as ApiResponse<Activity[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching activities:', error);
@@ -66,10 +20,10 @@ async function fetchActivities(): Promise<Activity[]> {
   }
 }
 
-async function fetchIndustries(): Promise<Industry[]> {
+async function fetchIndustries() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/industries`);
-    const data = await response.json() as ApiResponse<Industry[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching industries:', error);
@@ -77,10 +31,10 @@ async function fetchIndustries(): Promise<Industry[]> {
   }
 }
 
-async function fetchLanguages(): Promise<Language[]> {
+async function fetchLanguages() {
   try {
     const response = await fetch(`${EXTERNAL_API_BASE}/languages`);
-    const data = await response.json() as ApiResponse<Language[]>;
+    const data = await response.json() as any;
     return data.success ? data.data : [];
   } catch (error) {
     console.error('Error fetching languages:', error);
@@ -88,7 +42,7 @@ async function fetchLanguages(): Promise<Language[]> {
   }
 }
 
-async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; technical: Skill[] }> {
+async function fetchSkills() {
   try {
     const [softResponse, professionalResponse, technicalResponse] = await Promise.all([
       fetch(`${EXTERNAL_API_BASE}/skills/soft`),
@@ -97,9 +51,9 @@ async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; te
     ]);
 
     const [softData, professionalData, technicalData] = await Promise.all([
-      softResponse.json() as Promise<ApiResponse<Skill[]>>,
-      professionalResponse.json() as Promise<ApiResponse<Skill[]>>,
-      technicalResponse.json() as Promise<ApiResponse<Skill[]>>
+      softResponse.json() as Promise<any>,
+      professionalResponse.json() as Promise<any>,
+      technicalResponse.json() as Promise<any>
     ]);
 
     return {
@@ -113,74 +67,146 @@ async function fetchSkills(): Promise<{ soft: Skill[]; professional: Skill[]; te
   }
 }
 
-async function fetchCurrencies(): Promise<Currency[]> {
+async function fetchCurrencies() {
   try {
-    console.log(`🔍 Fetching currencies from: ${CURRENCIES_API_URL}`);
-    const response = await fetch(CURRENCIES_API_URL);
-    const data = await response.json() as ApiResponse<Currency[]>;
-    
-    if (data.success && data.data) {
-      console.log(`✅ ${data.data.length} currencies fetched successfully`);
-      return data.data.filter(currency => currency.isActive);
-    } else {
-      console.error('Error in currencies API response:', data);
-      return [];
+    console.log(`🔍 Reading currencies directly from MongoDB collection "currencies"`);
+
+    const docs = await Currency.find({ isActive: true })
+      .select({ code: 1, name: 1, symbol: 1, isActive: 1 })
+      .lean();
+
+    const currencies = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      code: doc.code,
+      name: doc.name,
+      symbol: doc.symbol,
+      isActive: doc.isActive,
+    }));
+
+    if (currencies.length > 0) {
+      console.log(`✅ ${currencies.length} currencies loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample currency:', JSON.stringify(currencies[0], null, 2));
+      }
+      return currencies;
     }
+
+    console.warn('⚠️ Collection "currencies" is empty');
+    throw new Error('Empty currency collection');
   } catch (error) {
-    console.error('Error fetching currencies:', error);
+    console.error('Error reading currencies from MongoDB:', error);
+    console.log('⚠️ Using fallback currencies (EUR, USD, GBP)...');
+
+    return [
+      {
+        "_id": "eur-id-placeholder",
+        "code": "EUR",
+        "name": "Euro",
+        "symbol": "€",
+        "isActive": true
+      },
+      {
+        "_id": "usd-id-placeholder",
+        "code": "USD",
+        "name": "United States dollar",
+        "symbol": "$",
+        "isActive": true
+      },
+      {
+        "_id": "gbp-id-placeholder",
+        "code": "GBP",
+        "name": "British pound",
+        "symbol": "£",
+        "isActive": true
+      }
+    ];
+  }
+}
+
+async function fetchTimezones() {
+  try {
+    console.log(`🔍 Reading timezones directly from MongoDB collection "timezones"`);
+
+    // NB: real documents in collection use `zoneName` + `countryCode` + `gmtOffset` + `countryName`
+    // — older schema with `name` / `offset` is kept as alias fallback below.
+    const docs = await Timezone.collection
+      .find({}, {
+        projection: {
+          zoneName: 1,
+          countryCode: 1,
+          countryName: 1,
+          gmtOffset: 1,
+          name: 1,
+          offset: 1,
+          abbreviation: 1,
+          description: 1,
+        },
+      })
+      .toArray();
+
+    const timezones = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      zoneName: doc.zoneName || doc.name || '',
+      name: doc.zoneName || doc.name || '',
+      countryCode: doc.countryCode || '',
+      countryName: doc.countryName || '',
+      gmtOffset: doc.gmtOffset ?? null,
+      offset: doc.offset || (typeof doc.gmtOffset === 'number'
+        ? `${doc.gmtOffset >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(doc.gmtOffset) / 3600)).padStart(2, '0')}:${String(Math.floor((Math.abs(doc.gmtOffset) % 3600) / 60)).padStart(2, '0')}`
+        : ''),
+      abbreviation: doc.abbreviation || '',
+      description: doc.description || '',
+    }));
+
+    if (timezones.length > 0) {
+      console.log(`✅ ${timezones.length} timezones loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample timezone:', JSON.stringify(timezones[0], null, 2));
+      }
+      return timezones;
+    }
+
+    console.warn('⚠️ Collection "timezones" is empty');
+    return [];
+  } catch (error) {
+    console.error('Error reading timezones from MongoDB:', error);
     return [];
   }
 }
 
-interface Timezone {
-  _id: string;
-  countryCode: string;
-  countryName: string;
-  zoneName: string;
-  gmtOffset: number;
-}
-
-async function fetchTimezones(): Promise<Timezone[]> {
+async function fetchCountries() {
   try {
-    const response = await fetch(`${EXTERNAL_API_BASE}/timezones`);
-    const data = await response.json() as ApiResponse<Timezone[]>;
-    return data.success ? data.data : [];
-  } catch (error) {
-    console.error('Error fetching timezones:', error);
+    console.log(`🔍 Reading countries directly from MongoDB collection "countries"`);
+
+    const docs = await Country.find({})
+      .select({ name: 1, cca2: 1, flags: 1 })
+      .lean();
+
+    const countries = docs.map((doc: any) => ({
+      _id: String(doc._id),
+      name: doc.name,
+      cca2: doc.cca2,
+      flags: doc.flags || {},
+    }));
+
+    if (countries.length > 0) {
+      console.log(`✅ ${countries.length} countries loaded from MongoDB`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Sample country:', JSON.stringify({ _id: countries[0]._id, name: countries[0].name, cca2: countries[0].cca2 }, null, 2));
+      }
+      return countries;
+    }
+
+    console.warn('⚠️ Collection "countries" is empty');
     return [];
-  }
-}
-
-// Fonction pour récupérer les pays depuis l'API externe
-async function fetchCountries(): Promise<any[]> {
-  try {
-    const countriesApiUrl = process.env.COUNTRIES_API_URL || 'http://localhost:5004/api/countries';
-    console.log(`🔍 Tentative de connexion à: ${countriesApiUrl}`);
-    const response = await fetch(countriesApiUrl);
-    const data = await response.json() as ApiResponse<any[]>;
-    
-    if (data.success && data.data) {
-      console.log(`✅ ${data.data.length} pays récupérés depuis l'API externe: ${countriesApiUrl}`);
-      return data.data;
-    } else {
-      console.error('Erreur réponse API countries:', data);
-      return [];
-    }
   } catch (error) {
-    console.error('Error fetching countries from API:', error);
-    // Fallback vers notre base de données locale en cas d'erreur
-    try {
-      const countries = await Country.find({}, { name: 1, cca2: 1, flags: 1 }).lean();
-      console.log(`⚠️  Fallback: ${countries.length} pays récupérés depuis MongoDB`);
-      return countries || [];
-    } catch (dbError) {
-      console.error('Error fallback database:', dbError);
-      return [];
-    }
+    console.error('Error reading countries from MongoDB:', error);
+    return [];
   }
 }
 
 export class AIController {
+
   /**
    * Génère des suggestions de gig complètes basées sur une description
    */
@@ -189,8 +215,8 @@ export class AIController {
       const { description } = req.body;
 
       if (!description) {
-        return res.status(400).json({ 
-          error: 'Description is required' 
+        return res.status(400).json({
+          error: 'Description is required'
         });
       }
 
@@ -219,9 +245,9 @@ export class AIController {
       res.status(200).json(suggestions);
     } catch (error: any) {
       console.error('Error generating gig suggestions:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate gig suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -234,8 +260,8 @@ export class AIController {
       const { title, description } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
@@ -255,9 +281,9 @@ export class AIController {
       res.status(200).json(skills);
     } catch (error: any) {
       console.error('Error generating skills:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate skills',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -267,11 +293,11 @@ export class AIController {
    */
   static async generateTimezones(req: Request, res: Response) {
     try {
-      const request: TimezoneGenerationRequest = req.body;
+      const request = req.body;
 
       if (!request.targetMarkets || request.targetMarkets.length === 0) {
-        return res.status(400).json({ 
-          error: 'Target markets are required' 
+        return res.status(400).json({
+          error: 'Target markets are required'
         });
       }
 
@@ -280,9 +306,9 @@ export class AIController {
       res.status(200).json(timezoneResponse);
     } catch (error: any) {
       console.error('Error generating timezones:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate timezone suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -295,23 +321,19 @@ export class AIController {
       const { title, description, category } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
-      const destinations = await AIService.generateDestinations(
-        title,
-        description || '',
-        category || ''
-      );
+      const destinations = await AIService.generateDestinations(title, description || '', category || '');
 
       res.status(200).json(destinations);
     } catch (error: any) {
       console.error('Error generating destinations:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate destination suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -324,8 +346,8 @@ export class AIController {
       const { title } = req.body;
 
       if (!title) {
-        return res.status(400).json({ 
-          error: 'Title is required' 
+        return res.status(400).json({
+          error: 'Title is required'
         });
       }
 
@@ -355,9 +377,9 @@ export class AIController {
       res.status(200).json(suggestions);
     } catch (error: any) {
       console.error('Error analyzing title:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to analyze title and generate description',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -370,8 +392,8 @@ export class AIController {
       const { description } = req.body;
 
       if (!description) {
-        return res.status(400).json({ 
-          error: 'Description is required' 
+        return res.status(400).json({
+          error: 'Description is required'
         });
       }
 
@@ -388,40 +410,40 @@ export class AIController {
 
       // Déterminer la catégorie basée sur la description
       const category = description.toLowerCase().includes('sales') ? 'Outbound Sales' :
-                      description.toLowerCase().includes('support') ? 'Technical Support' :
-                      description.toLowerCase().includes('service') ? 'Customer Service' :
-                      'Customer Service'; // Default
+        description.toLowerCase().includes('support') ? 'Technical Support' :
+          description.toLowerCase().includes('service') ? 'Customer Service' :
+            'Customer Service'; // Default
 
       // Créer une réponse de test avec les vraies données et le schéma complet
       const testResponse = {
         jobTitles: [`${category} Specialist`, `${category} Agent`, `${category} Representative`],
         jobDescription: `Test description based on: ${description}`,
         category: category,
-        destination_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id || 
-                     timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
-        activities: activitiesData.slice(0, 3).map((activity: Activity) => activity._id),
-        industries: industriesData.slice(0, 2).map((industry: Industry) => industry._id),
+        destination_zone: timezonesData.find((tz: any) => tz.zoneName === "Europe/Paris")?._id ||
+          timezonesData.find((tz: any) => tz.zoneName === "UTC")?._id || "UTC",
+        activities: activitiesData.slice(0, 3).map((activity: any) => activity._id),
+        industries: industriesData.slice(0, 2).map((industry: any) => industry._id),
         seniority: {
           level: "Mid-Level",
           yearsExperience: 2
         },
         skills: {
-          languages: languagesData.slice(0, 2).map((lang: Language) => ({
+          languages: languagesData.slice(0, 2).map((lang: any) => ({
             language: lang._id,
-            proficiency: "B2" as const,
+            proficiency: "B2",
             iso639_1: lang.code || 'en'
           })),
-          soft: skillsData.soft.slice(0, 3).map((skill: Skill) => ({
+          soft: skillsData.soft.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
           })),
-          professional: skillsData.professional.slice(0, 3).map((skill: Skill) => ({
+          professional: skillsData.professional.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
           })),
-          technical: skillsData.technical.slice(0, 3).map((skill: Skill) => ({
+          technical: skillsData.technical.slice(0, 3).map((skill: any) => ({
             skill: skill._id,
             level: 3,
             details: skill.description
@@ -434,7 +456,7 @@ export class AIController {
               hours: { start: "09:00", end: "17:00" }
             },
             {
-              day: "Tuesday", 
+              day: "Tuesday",
               hours: { start: "09:00", end: "17:00" }
             },
             {
@@ -450,8 +472,8 @@ export class AIController {
               hours: { start: "09:00", end: "17:00" }
             }
           ],
-          time_zone: timezonesData.find((tz: Timezone) => tz.zoneName === "Europe/Paris")?._id || 
-                     timezonesData.find((tz: Timezone) => tz.zoneName === "UTC")?._id || "UTC",
+          time_zone: timezonesData.find((tz: any) => tz.zoneName === "Europe/Paris")?._id ||
+            timezonesData.find((tz: any) => tz.zoneName === "UTC")?._id || "UTC",
           flexibility: ["Flexible Hours", "Remote Work Available"],
           minimumHours: {
             daily: 4,
@@ -460,21 +482,18 @@ export class AIController {
           }
         },
         commission: {
-          base: "Base + Commission",
-          baseAmount: 0,
-          bonus: "Performance Bonus",
-          bonusAmount: 150,
-          structure: "",
-          currency: "EUR",
+          commission_per_call: 0,
+          bonusAmount: "150",
+          currency: {
+            $oid: currenciesData.find((c: any) => c.code === 'EUR')?._id ||
+              currenciesData[0]?._id || "eur-id-placeholder"
+          },
           minimumVolume: {
-            amount: 25,
+            amount: "25",
             period: "Monthly",
             unit: "Calls"
           },
-          transactionCommission: {
-            type: "Fixed Amount",
-            amount: 50
-          },
+          transactionCommission: 50, // Number
           additionalDetails: "Commission structure based on performance metrics and call quality. Additional bonuses available for exceeding monthly targets."
         },
         team: {
@@ -507,9 +526,9 @@ export class AIController {
       res.status(200).json(testResponse);
     } catch (error: any) {
       console.error('Error in test endpoint:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to generate test suggestions',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -572,9 +591,9 @@ export class AIController {
       res.status(200).json(result);
     } catch (error: any) {
       console.error('Error testing API connections:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to connect to external APIs',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -592,24 +611,24 @@ export class AIController {
         industries: ["687cc6372c780dc1639ce1a5", "687cc6372c780dc1639ce1a6"], // IDs réels
         skills: {
           languages: [
-            { 
+            {
               language: "6878c3ba999b0fc08b1b14b5", // ID réel d'Abkhaz
-              proficiency: "B2", 
-              iso639_1: "ab" 
+              proficiency: "B2",
+              iso639_1: "ab"
             }
           ],
           soft: [
-            { 
+            {
               skill: "6868131dc44e8a46719af35c", // ID réel d'Adaptability
-              level: 3, 
-              details: "Important for customer service" 
+              level: 3,
+              details: "Important for customer service"
             }
           ],
           professional: [
-            { 
+            {
               skill: "68681321c44e8a46719af378", // ID réel de CRM System Proficiency
-              level: 4, 
-              details: "Essential for the role" 
+              level: 4,
+              details: "Essential for the role"
             }
           ],
           technical: []
@@ -632,9 +651,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error testing populate:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to test populate functionality',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -645,12 +664,12 @@ export class AIController {
   static async getCategories(req: Request, res: Response) {
     try {
       const categories = [
-        'Inbound Sales', 'Outbound Sales', 'Customer Service', 'Technical Support', 
-        'Account Management', 'Lead Generation', 'Market Research', 'Appointment Setting', 
-        'Order Processing', 'Customer Retention', 'Billing Support', 'Product Support', 
-        'Help Desk', 'Chat Support', 'Email Support', 'Social Media Support', 
-        'Survey Calls', 'Welcome Calls', 'Follow-up Calls', 'Complaint Resolution', 
-        'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support', 
+        'Inbound Sales', 'Outbound Sales', 'Customer Service', 'Technical Support',
+        'Account Management', 'Lead Generation', 'Market Research', 'Appointment Setting',
+        'Order Processing', 'Customer Retention', 'Billing Support', 'Product Support',
+        'Help Desk', 'Chat Support', 'Email Support', 'Social Media Support',
+        'Survey Calls', 'Welcome Calls', 'Follow-up Calls', 'Complaint Resolution',
+        'Warranty Support', 'Collections', 'Dispatch Services', 'Emergency Support',
         'Multilingual Support'
       ];
 
@@ -661,9 +680,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error getting categories:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to get categories',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -682,9 +701,9 @@ export class AIController {
       });
     } catch (error: any) {
       console.error('Error getting timezones:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to get timezones',
-        message: error.message 
+        message: error.message
       });
     }
   }
@@ -697,8 +716,8 @@ export class AIController {
       const { activities } = req.body;
 
       if (!activities || !Array.isArray(activities)) {
-        return res.status(400).json({ 
-          error: 'Activities array is required' 
+        return res.status(400).json({
+          error: 'Activities array is required'
         });
       }
 
@@ -708,26 +727,24 @@ export class AIController {
       // Tester la conversion
       const testResults = activities.map((activityName: string) => {
         // Simuler la fonction findActivityId (on ne peut pas l'appeler directement car elle est private)
+
         // Recherche exacte d'abord
-        let activity = activitiesData.find(a => 
-          a.name.toLowerCase() === activityName.toLowerCase()
-        );
-        
+        let activity = activitiesData.find((a: any) => a.name.toLowerCase() === activityName.toLowerCase());
         let matchType = 'exact';
         let foundId = '';
-        
+
         if (activity) {
           foundId = activity._id;
         } else {
           // Recherche approximative
           const normalizedSearchName = activityName.toLowerCase().trim();
-          
-          activity = activitiesData.find(a => {
+
+          activity = activitiesData.find((a: any) => {
             const normalizedActivityName = a.name.toLowerCase().trim();
-            return normalizedActivityName.includes(normalizedSearchName) || 
-                   normalizedSearchName.includes(normalizedActivityName);
+            return normalizedActivityName.includes(normalizedSearchName) ||
+              normalizedSearchName.includes(normalizedActivityName);
           });
-          
+
           if (activity) {
             foundId = activity._id;
             matchType = 'partial';
@@ -744,18 +761,16 @@ export class AIController {
               'support client': 'Customer Service',
               'service client': 'Customer Service'
             };
-            
+
             const mappedName = manualMappings[normalizedSearchName];
             if (mappedName) {
-              activity = activitiesData.find(a => 
-                a.name.toLowerCase() === mappedName.toLowerCase()
-              );
+              activity = activitiesData.find((a: any) => a.name.toLowerCase() === mappedName.toLowerCase());
               if (activity) {
                 foundId = activity._id;
                 matchType = 'manual_mapping';
               }
             }
-            
+
             if (!foundId && activitiesData.length > 0) {
               // Utiliser la première activité par défaut
               foundId = activitiesData[0]._id;
@@ -780,23 +795,24 @@ export class AIController {
         results: testResults,
         summary: {
           total: testResults.length,
-          successful: testResults.filter(r => r.success).length,
-          failed: testResults.filter(r => !r.success).length,
+          successful: testResults.filter((r: any) => r.success).length,
+          failed: testResults.filter((r: any) => !r.success).length,
           matchTypes: {
-            exact: testResults.filter(r => r.matchType === 'exact').length,
-            partial: testResults.filter(r => r.matchType === 'partial').length,
-            manual_mapping: testResults.filter(r => r.matchType === 'manual_mapping').length,
-            default_fallback: testResults.filter(r => r.matchType === 'default_fallback').length
+            exact: testResults.filter((r: any) => r.matchType === 'exact').length,
+            partial: testResults.filter((r: any) => r.matchType === 'partial').length,
+            manual_mapping: testResults.filter((r: any) => r.matchType === 'manual_mapping').length,
+            default_fallback: testResults.filter((r: any) => r.matchType === 'default_fallback').length
           }
         },
-        availableActivities: activitiesData.map(a => ({ id: a._id, name: a.name }))
+        availableActivities: activitiesData.map((a: any) => ({ id: a._id, name: a.name }))
       });
     } catch (error: any) {
       console.error('Error testing activity mapping:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to test activity mapping',
-        message: error.message 
+        message: error.message
       });
     }
   }
+
 }
