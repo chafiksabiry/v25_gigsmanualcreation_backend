@@ -280,6 +280,42 @@ export class AIService {
     return !!(key && key !== 'your_openai_api_key_here' && key.startsWith('sk-'));
   }
 
+  /**
+   * Transcribe spoken gig brief via OpenAI Whisper.
+   * Used by the company gig-creation wizard (record → generate).
+   */
+  static async transcribeAudio(params: {
+    buffer: Buffer;
+    filename?: string;
+    mimeType?: string;
+    language?: string;
+  }): Promise<string> {
+    if (!this.isValidApiKey()) {
+      throw new Error('OpenAI API key not configured properly');
+    }
+    if (!params.buffer || params.buffer.length === 0) {
+      throw new Error('Audio file is empty');
+    }
+
+    const { toFile } = await import('openai');
+    const filename = params.filename || 'gig-brief.webm';
+    const file = await toFile(params.buffer, filename, {
+      type: params.mimeType || 'audio/webm',
+    });
+
+    const transcription = await getOpenAIClient().audio.transcriptions.create({
+      file,
+      model: process.env.OPENAI_WHISPER_MODEL || 'whisper-1',
+      ...(params.language ? { language: params.language } : {}),
+    });
+
+    const text = String(transcription.text || '').trim();
+    if (!text) {
+      throw new Error('Transcription returned empty text');
+    }
+    return text;
+  }
+
   /** Extract a 24-char MongoDB ObjectId from string, { $oid }, { _id }, or array */
   private static extractMongoId(value: unknown): string | null {
     if (value == null) return null;
