@@ -208,6 +208,45 @@ async function fetchCountries() {
 export class AIController {
 
   /**
+   * Transcrit un enregistrement audio (Whisper) pour pré-remplir la création de gig.
+   * Body: multipart field `audio` (webm/mp3/wav/m4a/ogg).
+   * Optional query/body: language (e.g. "fr").
+   */
+  static async transcribeAudio(req: Request, res: Response) {
+    try {
+      const file = (req as any).file as Express.Multer.File | undefined;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({
+          error: 'Audio file is required (multipart field "audio")',
+        });
+      }
+
+      const language =
+        (typeof req.body?.language === 'string' && req.body.language) ||
+        (typeof req.query?.language === 'string' && req.query.language) ||
+        undefined;
+
+      const transcript = await AIService.transcribeAudio({
+        buffer: file.buffer,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        language: language || undefined,
+      });
+
+      return res.status(200).json({
+        success: true,
+        transcript,
+      });
+    } catch (error: any) {
+      console.error('Error transcribing audio:', error);
+      return res.status(500).json({
+        error: 'Failed to transcribe audio',
+        message: error.message,
+      });
+    }
+  }
+
+  /**
    * Génère des suggestions de gig complètes basées sur une description
    */
   static async generateGigSuggestions(req: Request, res: Response) {
