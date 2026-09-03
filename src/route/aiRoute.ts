@@ -1,7 +1,15 @@
 import express from 'express';
 import { AIController } from '../controllers/aiController';
+import { audioUpload } from '../config/audioMulter';
 
 const router = express.Router();
+
+// Transcribe spoken gig brief (Whisper) → text for generate-gig-suggestions
+router.post(
+  '/transcribe-audio',
+  audioUpload.single('audio'),
+  AIController.transcribeAudio
+);
 
 // Route pour générer des suggestions de gig complètes
 router.post('/generate-gig-suggestions', AIController.generateGigSuggestions);
