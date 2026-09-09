@@ -39,8 +39,13 @@ export class GigController {
 
   static async createGig(req: Request, res: Response) {
     try {
-      if (!req.body.title || !req.body.description) {
-        return res.status(400).json({ message: "Title and description are required", data: null });
+      if (!req.body.title || !String(req.body.title).trim()) {
+        return res.status(400).json({ message: "Title is required", data: null });
+      }
+
+      // Description is optional (call-center title-only create). Default to title when empty.
+      if (!req.body.description || !String(req.body.description).trim()) {
+        req.body.description = String(req.body.title).trim();
       }
 
       // Valider que destination_zone est un ObjectId valide si fourni
