@@ -90,7 +90,16 @@ function shouldFallbackToClaude(err: unknown): boolean {
   return false;
 }
 
-interface LLMResult { content: string; provider: 'openai' | 'anthropic' }
+interface LLMResult {
+  content: string;
+  provider: 'openai' | 'anthropic';
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    model?: string;
+  };
+}
 
 interface LLMChatOptions {
   systemPrompt: string;
@@ -141,7 +150,18 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
     console.log('✅ Réponse OpenAI reçue');
     const content = completion.choices[0]?.message?.content;
     if (!content) throw new Error('No content received from OpenAI');
-    return { content, provider: 'openai' };
+    const promptTokens = Number(completion.usage?.prompt_tokens || 0);
+    const completionTokens = Number(completion.usage?.completion_tokens || 0);
+    return {
+      content,
+      provider: 'openai',
+      usage: {
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        totalTokens: Number(completion.usage?.total_tokens || promptTokens + completionTokens),
+        model: resolvedModel,
+      },
+    };
   } catch (openaiError) {
     const fallback = shouldFallbackToClaude(openaiError);
     console.error(`❌ Erreur OpenAI (fallback Claude = ${fallback}):`, (openaiError as any)?.message || openaiError);
@@ -174,7 +194,18 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
         const textBlock = response.content.find((b: any) => b.type === 'text') as any;
         const content = textBlock?.text || '';
         if (!content) throw new Error('No content received from Claude fallback');
-        return { content, provider: 'anthropic' };
+        const inputTokens = Number((response as any).usage?.input_tokens || 0);
+        const outputTokens = Number((response as any).usage?.output_tokens || 0);
+        return {
+          content,
+          provider: 'anthropic',
+          usage: {
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            model: modelId,
+          },
+        };
       } catch (claudeErr) {
         lastClaudeError = claudeErr;
         if (isAnthropicModelNotFound(claudeErr)) {
@@ -275,6 +306,29 @@ const TEAM_ROLES = [
 ];
 
 export class AIService {
+  /** Last LLM usage from generateGigSuggestions (for billing). */
+  private static lastGigSuggestionUsage: {
+    provider: 'openai' | 'anthropic' | 'estimated';
+    model?: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimated: boolean;
+  } | null = null;
+
+  static takeLastGigSuggestionUsage(): {
+    provider: 'openai' | 'anthropic' | 'estimated';
+    model?: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimated: boolean;
+  } | null {
+    const u = AIService.lastGigSuggestionUsage;
+    AIService.lastGigSuggestionUsage = null;
+    return u;
+  }
+
   private static isValidApiKey(): boolean {
     const key = process.env.OPENAI_API_KEY;
     return !!(key && key !== 'your_openai_api_key_here' && key.startsWith('sk-'));
@@ -1093,7 +1147,7 @@ JSON format:
 }`;
 
     return retryWithBackoff(async () => {
-      const { content } = await callLLMWithFallback({
+      const llm = await callLLMWithFallback({
         systemPrompt:
           'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. Return only valid JSON.',
         userPrompt: prompt,
@@ -1102,6 +1156,19 @@ JSON format:
         maxTokens: 2000,
         forceJson: true,
       });
+      const content = llm.content;
+      if (llm.usage && llm.usage.totalTokens > 0) {
+        AIService.lastGigSuggestionUsage = {
+          provider: llm.provider,
+          model: llm.usage.model,
+          inputTokens: llm.usage.inputTokens,
+          outputTokens: llm.usage.outputTokens,
+          totalTokens: llm.usage.totalTokens,
+          estimated: false,
+        };
+      } else {
+        AIService.lastGigSuggestionUsage = null;
+      }
 
       try {
         const parsedResponse = this.parseOpenAIResponse(content);

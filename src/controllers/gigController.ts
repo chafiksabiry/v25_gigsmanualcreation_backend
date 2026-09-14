@@ -39,8 +39,39 @@ export class GigController {
 
   static async createGig(req: Request, res: Response) {
     try {
-      if (!req.body.title || !req.body.description) {
-        return res.status(400).json({ message: "Title and description are required", data: null });
+      if (!req.body.title || !String(req.body.title).trim()) {
+        return res.status(400).json({ message: "Title is required", data: null });
+      }
+
+      // Description is optional (call-center title-only create). Default to title when empty.
+      if (!req.body.description || !String(req.body.description).trim()) {
+        req.body.description = String(req.body.title).trim();
+      }
+
+      const isValidObjectId = (value: unknown): value is string =>
+        typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+
+      // Drop empty / non-ObjectId refs so title-only creates don't fail BSON cast.
+      if (!isValidObjectId(req.body.destination_zone)) {
+        delete req.body.destination_zone;
+      }
+      if (req.body.commission && !isValidObjectId(req.body.commission.currency)) {
+        delete req.body.commission.currency;
+        if (
+          !req.body.commission.currency &&
+          !req.body.commission.commission_per_call &&
+          !req.body.commission.transactionCommission
+        ) {
+          // Keep commission object optional; empty currency alone is fine after delete.
+        }
+      }
+      if (req.body.availability) {
+        if (!isValidObjectId(req.body.availability.time_zone)) {
+          delete req.body.availability.time_zone;
+        }
+        if (Array.isArray(req.body.availability.timeZones)) {
+          req.body.availability.timeZones = req.body.availability.timeZones.filter(isValidObjectId);
+        }
       }
 
       // Valider que destination_zone est un ObjectId valide si fourni
