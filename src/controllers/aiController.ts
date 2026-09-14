@@ -247,7 +247,11 @@ export class AIController {
   }
 
   /**
-   * Génère des suggestions de gig complètes basées sur une description
+   * Génère des suggestions de gig complètes basées sur une description.
+   *
+   * PRODUCT RULE: do NOT charge HARX AI prepaid tokens here.
+   * Gig creation prompt / Review & Refine stays free; token billing applies to
+   * training, scripts, document analysis, etc. — not orchestrator gig AI draft.
    */
   static async generateGigSuggestions(req: Request, res: Response) {
     try {
