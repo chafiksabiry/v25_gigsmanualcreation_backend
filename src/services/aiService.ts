@@ -1036,6 +1036,12 @@ RULES:
 - Same language as input
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
+- SCHEDULE / TIME RANGES (plages): availability.schedule is a FLAT list of { day, hours: { start, end } }.
+  • The SAME weekday MAY appear MULTIPLE times — once per time range (split shifts / lunch break / morning+afternoon).
+  • If the user prompt mentions several plages (e.g. "9h-12h et 14h-18h", "morning and evening", "avec pause déjeuner"), emit one entry per plage for EACH working day.
+  • Plages on the same day must NOT overlap (touching endpoints OK, e.g. 12:00 end then 12:00 start).
+  • If only one continuous window is implied, keep a single entry per day (default 09:00–17:00 weekday).
+  • Extract explicit hours from the prompt when present; otherwise use sensible business defaults for the market.
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 - team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
 
@@ -1087,26 +1093,16 @@ JSON format:
   },
   "availability": {
     "schedule": [
-      {
-        "day": "Monday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Tuesday", 
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Wednesday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Thursday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Friday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      }
+      { "day": "Monday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Monday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Tuesday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Tuesday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Wednesday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Wednesday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Thursday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Thursday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Friday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Friday", "hours": {"start": "13:00", "end": "17:00"} }
     ],
     "time_zone": "Europe/Paris",
     "flexibility": ["Flexible Hours", "Remote Work Available"],
@@ -1149,11 +1145,11 @@ JSON format:
     return retryWithBackoff(async () => {
       const llm = await callLLMWithFallback({
         systemPrompt:
-          'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. Return only valid JSON.',
+          'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
         userPrompt: prompt,
         openaiModel: DEFAULT_OPENAI_MODEL,
         temperature: 0.7,
-        maxTokens: 2000,
+        maxTokens: 2800,
         forceJson: true,
       });
       const content = llm.content;
