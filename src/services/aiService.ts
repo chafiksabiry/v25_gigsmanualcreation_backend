@@ -1187,22 +1187,23 @@ JSON format:
           parsedResponse.category = 'Customer Service'; // Default
         }
 
-        // Convertir les activités en IDs
         if (parsedResponse.activities) {
-          parsedResponse.activities = parsedResponse.activities.map((activityName: any) => {
+          const activityIds = parsedResponse.activities.map((activityName: any) => {
             const existingId = this.extractMongoId(activityName);
             if (existingId) return existingId;
             return this.findActivityId(this.getEntityLabel(activityName), activitiesData);
-          });
+          }).filter((id: string) => !!id);
+          parsedResponse.activities = [...new Set(activityIds)];
         }
 
         // Convertir les industries en IDs
         if (parsedResponse.industries) {
-          parsedResponse.industries = parsedResponse.industries.map((industryName: any) => {
+          const industryIds = parsedResponse.industries.map((industryName: any) => {
             const existingId = this.extractMongoId(industryName);
             if (existingId) return existingId;
             return this.findIndustryId(this.getEntityLabel(industryName), industriesData);
-          });
+          }).filter((id: string) => !!id);
+          parsedResponse.industries = [...new Set(industryIds)];
         }
 
         // Convertir les langues en IDs
@@ -1277,7 +1278,7 @@ JSON format:
           //   commission_per_call: 2   (per successful call)
           //   transactionCommission: 25 (per closed transaction)
           //   bonusAmount: 100         (bonus when minimumVolume reached)
-          //   minimumVolume: 50 Calls / Monthly
+          //   minimumVolume: 50 transactions /Monthly
 
           const toNumber = (val: any): number =>
             typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
@@ -1642,7 +1643,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    */
   static findActivityId(activityName: string, activitiesList: any[]): string {
     if (!activityName?.trim() || !activitiesList?.length) {
-      return activitiesList?.[0]?._id || 'unknown-activity-id';
+      return '';
     }
 
     const safeName = (a: any) => (typeof a?.name === 'string' ? a.name : '');
@@ -1691,17 +1692,10 @@ Example response format: ["US", "CA", "UK", "DE"]`;
       }
     }
 
-    // Si aucune correspondance n'est trouvée, utiliser la première activité par défaut
-    // au lieu de retourner le string original
-    if (activitiesList.length > 0) {
-      const defaultActivity = activitiesList[0];
-      console.warn(`⚠️  Aucune correspondance pour l'activité "${activityName}", utilisation par défaut: "${defaultActivity.name}" (${defaultActivity._id})`);
-      return defaultActivity._id;
-    }
-
-    // En dernier recours, retourner un ID générique (ne devrait jamais arriver)
-    console.error(`❌ Impossible de mapper l'activité "${activityName}" et aucune activité par défaut disponible`);
-    return 'unknown-activity-id';
+    // Ne pas substituer la première activité du catalogue : deux échecs
+    // devenaient le même id et React affichait le même chip en double.
+    console.warn(`⚠️  Aucune correspondance pour l'activité "${activityName}"`);
+    return '';
   }
 
   /**
@@ -1709,7 +1703,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
    */
   static findIndustryId(industryName: string, industriesList: any[]): string {
     if (!industryName?.trim() || !industriesList?.length) {
-      return industriesList?.[0]?._id || 'unknown-industry-id';
+      return '';
     }
 
     const safeName = (i: any) => (typeof i?.name === 'string' ? i.name : '');
@@ -1758,16 +1752,8 @@ Example response format: ["US", "CA", "UK", "DE"]`;
       }
     }
 
-    // Si aucune correspondance n'est trouvée, utiliser la première industrie par défaut
-    if (industriesList.length > 0) {
-      const defaultIndustry = industriesList[0];
-      console.warn(`⚠️  Aucune correspondance pour l'industrie "${industryName}", utilisation par défaut: "${defaultIndustry.name}" (${defaultIndustry._id})`);
-      return defaultIndustry._id;
-    }
-
-    // En dernier recours, retourner un ID générique
-    console.error(`❌ Impossible de mapper l'industrie "${industryName}" et aucune industrie par défaut disponible`);
-    return 'unknown-industry-id';
+    console.warn(`⚠️  Aucune correspondance pour l'industrie "${industryName}"`);
+    return '';
   }
 
   /**
