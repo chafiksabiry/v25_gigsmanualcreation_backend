@@ -230,6 +230,18 @@ export class GigController {
         return res.status(404).json({ message: "Gig not found", data: null });
       }
 
+      const nextStatus = String((updateData as any)?.status || '').toLowerCase();
+      if (nextStatus === 'inactive' || nextStatus === 'archived') {
+        try {
+          const { notifyGigDeactivated } = await import('../services/repNotificationClient');
+          void notifyGigDeactivated(updatedGig as any).catch((err) =>
+            console.error('[GigController] deactivate notif failed', err)
+          );
+        } catch (err) {
+          console.error('[GigController] deactivate notif import failed', err);
+        }
+      }
+
       console.log('✅ BACKEND - Gig updated successfully:', updatedGig._id);
       return res.status(200).json({
         message: "Gig updated successfully",
