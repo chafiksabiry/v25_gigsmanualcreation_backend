@@ -5,6 +5,9 @@ import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFa
 import { Language } from "../models/languageModel";
 import axios from 'axios';
 // Import des modèles pour le populate
+import { Sector } from '../models/sectorModel';
+import { Activity } from '../models/activityModel';
+import { Industry } from '../models/industryModel';
 import '../models/sectorModel';
 import '../models/activityModel';
 import '../models/industryModel';
@@ -15,6 +18,65 @@ import '../models/countryModel';
 import '../models/userModel';
 import '../models/companyModel';
 import '../models/currencyModel';
+
+function isObjectIdString(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value);
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Normalize AI/UI labels (or mixed arrays) into ObjectId strings for ref fields. */
+async function resolveNamedObjectIds(
+  values: unknown,
+  opts: {
+    findByName: (name: string) => Promise<{ _id: mongoose.Types.ObjectId } | null>;
+    createByName?: (name: string) => Promise<{ _id: mongoose.Types.ObjectId }>;
+  }
+): Promise<string[]> {
+  if (values == null) return [];
+  let list: unknown[] = Array.isArray(values) ? values : [values];
+
+  // Tolerate accidental stringified arrays from the client.
+  if (list.length === 1 && typeof list[0] === 'string') {
+    const raw = list[0].trim();
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(raw.replace(/'/g, '"'));
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {
+        /* keep as single label */
+      }
+    }
+  }
+
+  const ids: string[] = [];
+  for (const item of list) {
+    if (item == null) continue;
+    if (typeof item === 'object' && item !== null && (item as any)._id) {
+      const nested = String((item as any)._id);
+      if (isObjectIdString(nested)) ids.push(nested);
+      continue;
+    }
+    const raw = String(item).trim();
+    if (!raw) continue;
+    if (isObjectIdString(raw)) {
+      ids.push(raw);
+      continue;
+    }
+    const existing = await opts.findByName(raw);
+    if (existing?._id) {
+      ids.push(String(existing._id));
+      continue;
+    }
+    if (opts.createByName) {
+      const created = await opts.createByName(raw);
+      if (created?._id) ids.push(String(created._id));
+    }
+  }
+  return [...new Set(ids)];
+}
 
 export class GigService {
   private gigRepository: GigRepository;
@@ -41,9 +103,66 @@ export class GigService {
     }
   }
 
+  /** Map sector/industry/activity names → ObjectIds before mongoose cast. */
+  private static async resolveTaxonomyRefs(gigData: any) {
+    if (!gigData || typeof gigData !== 'object') return;
+
+    if (gigData.sectors != null) {
+      gigData.sectors = await resolveNamedObjectIds(gigData.sectors, {
+        findByName: async (name) =>
+          Sector.findOne({
+            $or: [
+              { name: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.en': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.fr': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+            ],
+          }),
+        createByName: async (name) =>
+          Sector.findOneAndUpdate(
+            { name },
+            {
+              $setOnInsert: {
+                name,
+                name_i18n: { en: name, fr: name },
+                description: name,
+              },
+            },
+            { upsert: true, new: true }
+          ),
+      });
+    }
+
+    if (gigData.industries != null) {
+      gigData.industries = await resolveNamedObjectIds(gigData.industries, {
+        findByName: async (name) =>
+          Industry.findOne({
+            $or: [
+              { name: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.en': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.fr': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+            ],
+          }),
+      });
+    }
+
+    if (gigData.activities != null) {
+      gigData.activities = await resolveNamedObjectIds(gigData.activities, {
+        findByName: async (name) =>
+          Activity.findOne({
+            $or: [
+              { name: new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.en': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+              { 'name_i18n.fr': new RegExp(`^${escapeRegex(name)}$`, 'i') },
+            ],
+          }),
+      });
+    }
+  }
+
   static async createGig(gigData: any) {
     try {
       await GigService.resolveLanguages(gigData);
+      await GigService.resolveTaxonomyRefs(gigData);
       const newGig = new Gig(gigData);
       await newGig.save();
 
@@ -172,6 +291,7 @@ export class GigService {
   static async updateGig(id: string, updateData: any) {
     try {
       await GigService.resolveLanguages(updateData);
+      await GigService.resolveTaxonomyRefs(updateData);
       console.log('🔍 SERVICE - updateGig called with ID:', id);
       console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
       
