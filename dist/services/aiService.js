@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -114,7 +147,18 @@ async function callLLMWithFallback(opts) {
         const content = completion.choices[0]?.message?.content;
         if (!content)
             throw new Error('No content received from OpenAI');
-        return { content, provider: 'openai' };
+        const promptTokens = Number(completion.usage?.prompt_tokens || 0);
+        const completionTokens = Number(completion.usage?.completion_tokens || 0);
+        return {
+            content,
+            provider: 'openai',
+            usage: {
+                inputTokens: promptTokens,
+                outputTokens: completionTokens,
+                totalTokens: Number(completion.usage?.total_tokens || promptTokens + completionTokens),
+                model: resolvedModel,
+            },
+        };
     }
     catch (openaiError) {
         const fallback = shouldFallbackToClaude(openaiError);
@@ -145,7 +189,18 @@ async function callLLMWithFallback(opts) {
                 const content = textBlock?.text || '';
                 if (!content)
                     throw new Error('No content received from Claude fallback');
-                return { content, provider: 'anthropic' };
+                const inputTokens = Number(response.usage?.input_tokens || 0);
+                const outputTokens = Number(response.usage?.output_tokens || 0);
+                return {
+                    content,
+                    provider: 'anthropic',
+                    usage: {
+                        inputTokens,
+                        outputTokens,
+                        totalTokens: inputTokens + outputTokens,
+                        model: modelId,
+                    },
+                };
             }
             catch (claudeErr) {
                 lastClaudeError = claudeErr;
@@ -193,9 +248,41 @@ const TEAM_ROLES = [
     "Agent Junior",
 ];
 class AIService {
+    static takeLastGigSuggestionUsage() {
+        const u = AIService.lastGigSuggestionUsage;
+        AIService.lastGigSuggestionUsage = null;
+        return u;
+    }
     static isValidApiKey() {
         const key = process.env.OPENAI_API_KEY;
         return !!(key && key !== 'your_openai_api_key_here' && key.startsWith('sk-'));
+    }
+    /**
+     * Transcribe spoken gig brief via OpenAI Whisper.
+     * Used by the company gig-creation wizard (record → generate).
+     */
+    static async transcribeAudio(params) {
+        if (!this.isValidApiKey()) {
+            throw new Error('OpenAI API key not configured properly');
+        }
+        if (!params.buffer || params.buffer.length === 0) {
+            throw new Error('Audio file is empty');
+        }
+        const { toFile } = await Promise.resolve().then(() => __importStar(require('openai')));
+        const filename = params.filename || 'gig-brief.webm';
+        const file = await toFile(params.buffer, filename, {
+            type: params.mimeType || 'audio/webm',
+        });
+        const transcription = await getOpenAIClient().audio.transcriptions.create({
+            file,
+            model: process.env.OPENAI_WHISPER_MODEL || 'whisper-1',
+            ...(params.language ? { language: params.language } : {}),
+        });
+        const text = String(transcription.text || '').trim();
+        if (!text) {
+            throw new Error('Transcription returned empty text');
+        }
+        return text;
     }
     /** Extract a 24-char MongoDB ObjectId from string, { $oid }, { _id }, or array */
     static extractMongoId(value) {
@@ -615,7 +702,83 @@ class AIService {
     /**
      * Génère des suggestions de gig basées sur une description
      */
-    static async generateGigSuggestions(description, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData) {
+    /** Normalize AI bilingual text → {en,fr} (fills missing side from the other). */
+    static asI18nText(raw, fallback = '') {
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            const o = raw;
+            const en = String(o.en ?? o.fr ?? fallback ?? '').trim();
+            const fr = String(o.fr ?? o.en ?? fallback ?? '').trim();
+            return { en: en || fr, fr: fr || en };
+        }
+        const s = String(raw ?? fallback ?? '').trim();
+        return { en: s, fr: s };
+    }
+    static asI18nList(raw, fallback = []) {
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            const o = raw;
+            const en = Array.isArray(o.en)
+                ? o.en.map((x) => String(x).trim()).filter(Boolean)
+                : [];
+            const fr = Array.isArray(o.fr)
+                ? o.fr.map((x) => String(x).trim()).filter(Boolean)
+                : [];
+            return {
+                en: en.length ? en : fr.length ? fr : fallback,
+                fr: fr.length ? fr : en.length ? en : fallback,
+            };
+        }
+        if (Array.isArray(raw)) {
+            const list = raw.map((x) => String(x).trim()).filter(Boolean);
+            return { en: list, fr: list };
+        }
+        return { en: fallback, fr: fallback };
+    }
+    /** Attach *_i18n fields and set plain title/description from preferred UI language. */
+    static applyGigBilingualFields(parsed, preferred = 'fr') {
+        const jobTitlesList = Array.isArray(parsed.jobTitles)
+            ? parsed.jobTitles.map((t) => String(t).trim()).filter(Boolean)
+            : [];
+        const jobTitlesI18n = this.asI18nList(parsed.jobTitles_i18n, jobTitlesList);
+        const jobDescriptionI18n = this.asI18nText(parsed.jobDescription_i18n || parsed.jobDescription, String(parsed.jobDescription || ''));
+        const highlightsList = Array.isArray(parsed.highlights)
+            ? parsed.highlights.map((t) => String(t).trim()).filter(Boolean)
+            : [];
+        const highlightsI18n = this.asI18nList(parsed.highlights_i18n, highlightsList);
+        const deliverablesList = Array.isArray(parsed.deliverables)
+            ? parsed.deliverables.map((t) => String(t).trim()).filter(Boolean)
+            : [];
+        const deliverablesI18n = this.asI18nList(parsed.deliverables_i18n, deliverablesList);
+        const preferredTitles = preferred === 'en' ? jobTitlesI18n.en : jobTitlesI18n.fr;
+        const preferredDescription = preferred === 'en' ? jobDescriptionI18n.en : jobDescriptionI18n.fr;
+        const preferredHighlights = preferred === 'en' ? highlightsI18n.en : highlightsI18n.fr;
+        const preferredDeliverables = preferred === 'en' ? deliverablesI18n.en : deliverablesI18n.fr;
+        parsed.jobTitles = preferredTitles.length ? preferredTitles : jobTitlesList;
+        parsed.jobTitles_i18n = jobTitlesI18n;
+        parsed.jobDescription = preferredDescription || String(parsed.jobDescription || '');
+        parsed.jobDescription_i18n = jobDescriptionI18n;
+        parsed.highlights = preferredHighlights.length ? preferredHighlights : highlightsList;
+        parsed.highlights_i18n = highlightsI18n;
+        parsed.deliverables = preferredDeliverables.length
+            ? preferredDeliverables
+            : deliverablesList;
+        parsed.deliverables_i18n = deliverablesI18n;
+        // Persist-ready aliases used when saving the gig document
+        parsed.title = parsed.jobTitles?.[0] || parsed.title || '';
+        parsed.title_i18n = {
+            en: jobTitlesI18n.en[0] || parsed.title,
+            fr: jobTitlesI18n.fr[0] || parsed.title,
+        };
+        parsed.description = parsed.jobDescription;
+        parsed.description_i18n = jobDescriptionI18n;
+        if (parsed.commission) {
+            const detailsI18n = this.asI18nText(parsed.commission.additionalDetails_i18n || parsed.commission.additionalDetails, String(parsed.commission.additionalDetails || ''));
+            parsed.commission.additionalDetails =
+                preferred === 'en' ? detailsI18n.en : detailsI18n.fr;
+            parsed.commission.additionalDetails_i18n = detailsI18n;
+        }
+        return parsed;
+    }
+    static async generateGigSuggestions(description, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData, uiLanguage = 'fr') {
         if (!this.isValidApiKey()) {
             throw new Error('OpenAI API key not configured properly');
         }
@@ -682,13 +845,14 @@ class AIService {
         const prompt = `Based on: "${description}"
 
 CRITICAL LANGUAGE RULE (read first):
-- Detect the language of the description above.
-- ALL human-readable text fields you generate (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, coverageAnalysis, etc.) MUST be written in that EXACT SAME LANGUAGE.
-- Do NOT translate to English unless the input itself is in English.
+- ALWAYS generate bilingual French AND English for human-readable fields.
+- Provide BOTH:
+  • plain arrays/strings (jobTitles, jobDescription, highlights, deliverables, additionalDetails, flexibility) in the UI language: ${uiLanguage === 'fr' ? 'French' : 'English'}
+  • matching *_i18n objects with BOTH "en" and "fr" filled (never leave one language empty).
 - Keep technical identifiers untouched: MongoDB ObjectIds, ISO codes, currency codes, IANA timezones, weekday names (Monday, Tuesday, ...), proficiency codes (A1..C2).
 
 IMPORTANT:
-- Respond in the SAME LANGUAGE as input (see rule above)
+- UI language for plain fields: ${uiLanguage}
 - For destination_zone, use EXACTLY ONE MongoDB ObjectId string from COUNTRIES list (NOT an array, NOT multiple countries)
 - availability.time_zone MUST be the primary IANA timezone of the destination_zone country (France → Europe/Paris, Morocco → Africa/Casablanca, Belgium → Europe/Brussels, Canada → America/Toronto, USA → America/New_York, UK → Europe/London, Germany → Europe/Berlin, Spain → Europe/Madrid, Italy → Europe/Rome). NEVER mix a country with the timezone of a different one.
 - For currency, use ONLY MongoDB ObjectId from CURRENCIES list inside the object structure
@@ -729,9 +893,15 @@ TEAM ROLES (choose the most appropriate ones from this list):
 ${TEAM_ROLES.join(', ')}
 
 RULES:
-- Same language as input
+- Bilingual FR + EN for all narrative fields (*_i18n required)
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
+- SCHEDULE / TIME RANGES (plages): availability.schedule is a FLAT list of { day, hours: { start, end } }.
+  • The SAME weekday MAY appear MULTIPLE times — once per time range (split shifts / lunch break / morning+afternoon).
+  • If the user prompt mentions several plages (e.g. "9h-12h et 14h-18h", "morning and evening", "avec pause déjeuner"), emit one entry per plage for EACH working day.
+  • Plages on the same day must NOT overlap (touching endpoints OK, e.g. 12:00 end then 12:00 start).
+  • If only one continuous window is implied, keep a single entry per day (default 09:00–17:00 weekday).
+  • Extract explicit hours from the prompt when present; otherwise use sensible business defaults for the market.
 - Seniority: Entry Level/Junior/Mid-Level/Senior/Manager
 - team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
 
@@ -750,7 +920,7 @@ COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
   • "period" = "Daily" | "Weekly" | "Monthly". Detect from context. DEFAULT = "Monthly".
   • "unit" = "Calls" | "Transactions". Choose what's mentioned. DEFAULT = "Calls".
 - "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }. DEFAULT = EUR ObjectId.
-- "additionalDetails" = short paragraph (2-3 sentences) summarising payment frequency (weekly/monthly), how the bonus triggers, and any special clauses. SAME LANGUAGE AS INPUT.
+- "additionalDetails" = short paragraph (2-3 sentences) summarising payment frequency (weekly/monthly), how the bonus triggers, and any special clauses (UI language). Also fill additionalDetails_i18n {en,fr}.
 
 EXAMPLES:
 - "Pay 5€ per call + 50€ per sale, bonus 200€ if 100 calls per month" →
@@ -763,10 +933,26 @@ EXAMPLES:
 
 JSON format:
 {
-  "jobTitles": ["Main job title suggestion (SAME LANGUAGE AS USER QUERY)", "Alternative job title (SAME LANGUAGE AS USER QUERY)", "Another option (SAME LANGUAGE AS USER QUERY)"],
-  "jobDescription": "Enhanced description (IN SAME LANGUAGE AS USER QUERY)",
-  "highlights": ["Key selling point 1 (SAME LANGUAGE AS USER QUERY)", "Key selling point 2 (SAME LANGUAGE AS USER QUERY)", "Key selling point 3 (SAME LANGUAGE AS USER QUERY)"],
-  "deliverables": ["Expected outcome 1 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 2 (SAME LANGUAGE AS USER QUERY)", "Expected outcome 3 (SAME LANGUAGE AS USER QUERY)"],
+  "jobTitles": ["Main title (UI language)", "Alternative title (UI language)", "Another option (UI language)"],
+  "jobTitles_i18n": {
+    "en": ["Main EN title", "Alternative EN title", "Another EN option"],
+    "fr": ["Titre principal FR", "Titre alternatif FR", "Autre option FR"]
+  },
+  "jobDescription": "Enhanced description in UI language",
+  "jobDescription_i18n": {
+    "en": "Enhanced description in English",
+    "fr": "Description enrichie en français"
+  },
+  "highlights": ["Selling point 1 (UI language)", "Selling point 2 (UI language)", "Selling point 3 (UI language)"],
+  "highlights_i18n": {
+    "en": ["Selling point 1 EN", "Selling point 2 EN", "Selling point 3 EN"],
+    "fr": ["Point fort 1 FR", "Point fort 2 FR", "Point fort 3 FR"]
+  },
+  "deliverables": ["Outcome 1 (UI language)", "Outcome 2 (UI language)", "Outcome 3 (UI language)"],
+  "deliverables_i18n": {
+    "en": ["Outcome 1 EN", "Outcome 2 EN", "Outcome 3 EN"],
+    "fr": ["Livrable 1 FR", "Livrable 2 FR", "Livrable 3 FR"]
+  },
   "category": "One of the predefined categories above",
   "destination_zone": "SINGLE_MONGODB_OBJECTID_STRING_FROM_COUNTRIES_LIST",
   "activities": ["activity1", "activity2"],
@@ -783,26 +969,16 @@ JSON format:
   },
   "availability": {
     "schedule": [
-      {
-        "day": "Monday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Tuesday", 
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Wednesday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Thursday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      },
-      {
-        "day": "Friday",
-        "hours": {"start": "09:00", "end": "17:00"}
-      }
+      { "day": "Monday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Monday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Tuesday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Tuesday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Wednesday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Wednesday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Thursday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Thursday", "hours": {"start": "13:00", "end": "17:00"} },
+      { "day": "Friday", "hours": {"start": "09:00", "end": "12:00"} },
+      { "day": "Friday", "hours": {"start": "13:00", "end": "17:00"} }
     ],
     "time_zone": "Europe/Paris",
     "flexibility": ["Flexible Hours", "Remote Work Available"],
@@ -824,7 +1000,11 @@ JSON format:
       "period": "Monthly",
       "unit": "Calls"
     },
-    "additionalDetails": "Comprehensive 2-3 sentence summary in the SAME LANGUAGE as input: include per-call pay, per-transaction commission, bonus trigger (X calls per day/week/month) and payment frequency (weekly/monthly)."
+    "additionalDetails": "2-3 sentence commission summary in UI language",
+    "additionalDetails_i18n": {
+      "en": "2-3 sentence commission summary in English",
+      "fr": "Résumé commission en 2-3 phrases en français"
+    }
   },
   "team": {
     "size": 1,
@@ -842,16 +1022,30 @@ JSON format:
   }
 }`;
         return retryWithBackoff(async () => {
-            const { content } = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Detect the language of the user prompt and write ALL human-readable text fields (jobTitles, jobDescription, highlights, deliverables, additionalDetails, role names, skill details, flexibility labels, etc.) in that EXACT same language. Do NOT translate to English. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. Return only valid JSON.',
+            const llm = await callLLMWithFallback({
+                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Always produce bilingual French AND English for narrative fields (jobTitles_i18n, jobDescription_i18n, highlights_i18n, deliverables_i18n, additionalDetails_i18n). Plain fields use the requested UI language. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
-                maxTokens: 2000,
+                maxTokens: 3600,
                 forceJson: true,
             });
+            const content = llm.content;
+            if (llm.usage && llm.usage.totalTokens > 0) {
+                AIService.lastGigSuggestionUsage = {
+                    provider: llm.provider,
+                    model: llm.usage.model,
+                    inputTokens: llm.usage.inputTokens,
+                    outputTokens: llm.usage.outputTokens,
+                    totalTokens: llm.usage.totalTokens,
+                    estimated: false,
+                };
+            }
+            else {
+                AIService.lastGigSuggestionUsage = null;
+            }
             try {
-                const parsedResponse = this.parseOpenAIResponse(content);
+                const parsedResponse = this.applyGigBilingualFields(this.parseOpenAIResponse(content), uiLanguage);
                 const rawDestinationZone = parsedResponse.destination_zone;
                 parsedResponse.destination_zone = this.normalizeDestinationZone(rawDestinationZone, countriesData, description);
                 console.log(`🔍 destination_zone normalisé: ${parsedResponse.destination_zone || '(vide)'}`);
@@ -865,23 +1059,24 @@ JSON format:
                 else {
                     parsedResponse.category = 'Customer Service'; // Default
                 }
-                // Convertir les activités en IDs
                 if (parsedResponse.activities) {
-                    parsedResponse.activities = parsedResponse.activities.map((activityName) => {
+                    const activityIds = parsedResponse.activities.map((activityName) => {
                         const existingId = this.extractMongoId(activityName);
                         if (existingId)
                             return existingId;
                         return this.findActivityId(this.getEntityLabel(activityName), activitiesData);
-                    });
+                    }).filter((id) => !!id);
+                    parsedResponse.activities = [...new Set(activityIds)];
                 }
                 // Convertir les industries en IDs
                 if (parsedResponse.industries) {
-                    parsedResponse.industries = parsedResponse.industries.map((industryName) => {
+                    const industryIds = parsedResponse.industries.map((industryName) => {
                         const existingId = this.extractMongoId(industryName);
                         if (existingId)
                             return existingId;
                         return this.findIndustryId(this.getEntityLabel(industryName), industriesData);
-                    });
+                    }).filter((id) => !!id);
+                    parsedResponse.industries = [...new Set(industryIds)];
                 }
                 // Convertir les langues en IDs
                 if (parsedResponse.skills?.languages) {
@@ -950,7 +1145,7 @@ JSON format:
                     //   commission_per_call: 2   (per successful call)
                     //   transactionCommission: 25 (per closed transaction)
                     //   bonusAmount: 100         (bonus when minimumVolume reached)
-                    //   minimumVolume: 50 Calls / Monthly
+                    //   minimumVolume: 50 transactions /Monthly
                     const toNumber = (val) => typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
                     const parsedPerCall = toNumber(parsedResponse.commission.commission_per_call ?? parsedResponse.commission.commissionPerCall);
                     parsedResponse.commission.commission_per_call = parsedPerCall > 0 ? parsedPerCall : 2;
@@ -1253,7 +1448,7 @@ Example response format: ["US", "CA", "UK", "DE"]`;
      */
     static findActivityId(activityName, activitiesList) {
         if (!activityName?.trim() || !activitiesList?.length) {
-            return activitiesList?.[0]?._id || 'unknown-activity-id';
+            return '';
         }
         const safeName = (a) => (typeof a?.name === 'string' ? a.name : '');
         // Recherche exacte d'abord
@@ -1295,23 +1490,17 @@ Example response format: ["US", "CA", "UK", "DE"]`;
                 return activity._id;
             }
         }
-        // Si aucune correspondance n'est trouvée, utiliser la première activité par défaut
-        // au lieu de retourner le string original
-        if (activitiesList.length > 0) {
-            const defaultActivity = activitiesList[0];
-            console.warn(`⚠️  Aucune correspondance pour l'activité "${activityName}", utilisation par défaut: "${defaultActivity.name}" (${defaultActivity._id})`);
-            return defaultActivity._id;
-        }
-        // En dernier recours, retourner un ID générique (ne devrait jamais arriver)
-        console.error(`❌ Impossible de mapper l'activité "${activityName}" et aucune activité par défaut disponible`);
-        return 'unknown-activity-id';
+        // Ne pas substituer la première activité du catalogue : deux échecs
+        // devenaient le même id et React affichait le même chip en double.
+        console.warn(`⚠️  Aucune correspondance pour l'activité "${activityName}"`);
+        return '';
     }
     /**
      * Trouve l'ID d'une industrie par son nom avec correspondance approximative
      */
     static findIndustryId(industryName, industriesList) {
         if (!industryName?.trim() || !industriesList?.length) {
-            return industriesList?.[0]?._id || 'unknown-industry-id';
+            return '';
         }
         const safeName = (i) => (typeof i?.name === 'string' ? i.name : '');
         // Recherche exacte d'abord
@@ -1353,15 +1542,8 @@ Example response format: ["US", "CA", "UK", "DE"]`;
                 return industry._id;
             }
         }
-        // Si aucune correspondance n'est trouvée, utiliser la première industrie par défaut
-        if (industriesList.length > 0) {
-            const defaultIndustry = industriesList[0];
-            console.warn(`⚠️  Aucune correspondance pour l'industrie "${industryName}", utilisation par défaut: "${defaultIndustry.name}" (${defaultIndustry._id})`);
-            return defaultIndustry._id;
-        }
-        // En dernier recours, retourner un ID générique
-        console.error(`❌ Impossible de mapper l'industrie "${industryName}" et aucune industrie par défaut disponible`);
-        return 'unknown-industry-id';
+        console.warn(`⚠️  Aucune correspondance pour l'industrie "${industryName}"`);
+        return '';
     }
     /**
      * Trouve l'ID d'une devise par son code
@@ -1676,6 +1858,8 @@ Example response format: ["US", "CA", "UK", "DE"]`;
     }
 }
 exports.AIService = AIService;
+/** Last LLM usage from generateGigSuggestions (for billing). */
+AIService.lastGigSuggestionUsage = null;
 /** Primary IANA timezone per country (cca2 → zone name) */
 AIService.COUNTRY_TIMEZONE_MAP = {
     FR: 'Europe/Paris',
