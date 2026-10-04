@@ -6,6 +6,7 @@ const currencyModel_1 = require("../models/currencyModel");
 const timezoneModel_1 = require("../models/timezoneModel");
 const aiService_1 = require("../services/aiService");
 const populateService_1 = require("../services/populateService");
+const aiTokenBilling_1 = require("../utils/aiTokenBilling");
 // Configuration de l'API externe
 const EXTERNAL_API_BASE = process.env.REP_URL || '/api';
 // Fonctions pour récupérer les données depuis l'API externe
@@ -192,16 +193,91 @@ async function fetchCountries() {
 }
 class AIController {
     /**
+     * Transcrit un enregistrement audio (Whisper) pour pré-remplir la création de gig.
+     * Body: multipart field `audio` (webm/mp3/wav/m4a/ogg).
+     * Optional query/body: language (e.g. "fr").
+     */
+    static async transcribeAudio(req, res) {
+        try {
+            const file = req.file;
+            if (!file?.buffer?.length) {
+                return res.status(400).json({
+                    error: 'Audio file is required (multipart field "audio")',
+                });
+            }
+            const billingCompanyId = String(req.body?.companyId || '').trim() || undefined;
+            const tokenGate = await (0, aiTokenBilling_1.assertCompanyHasAiTokens)(billingCompanyId, 1);
+            if (!tokenGate.ok) {
+                return res.status(402).json({
+                    success: false,
+                    error: 'insufficient_tokens',
+                    message: tokenGate.message,
+                    data: { tokens: tokenGate.tokens },
+                });
+            }
+            const firstGigFree = Boolean(tokenGate.firstGigFree);
+            const language = (typeof req.body?.language === 'string' && req.body.language) ||
+                (typeof req.query?.language === 'string' && req.query.language) ||
+                undefined;
+            const transcript = await aiService_1.AIService.transcribeAudio({
+                buffer: file.buffer,
+                filename: file.originalname,
+                mimeType: file.mimetype,
+                language: language || undefined,
+            });
+            const usage = (0, aiTokenBilling_1.resolveUsageOrEstimate)(null, transcript, String(file.originalname || ''));
+            usage.totalTokens = Math.max(400, usage.totalTokens);
+            usage.outputTokens = usage.totalTokens;
+            const charge = await (0, aiTokenBilling_1.chargeCompanyAiTokens)({
+                companyId: billingCompanyId,
+                usageId: `gig-transcribe-${Date.now()}`,
+                usage,
+                tool: 'gig.transcribe_audio',
+                meta: { fileName: file.originalname, mime: file.mimetype, firstGigFree },
+                skipCharge: firstGigFree,
+            });
+            return res.status(200).json({
+                success: true,
+                transcript,
+                usage: {
+                    ...usage,
+                    billed: charge.billed,
+                    balance: charge.tokens,
+                    firstGigFree,
+                },
+            });
+        }
+        catch (error) {
+            console.error('Error transcribing audio:', error);
+            return res.status(500).json({
+                error: 'Failed to transcribe audio',
+                message: error.message,
+            });
+        }
+    }
+    /**
      * Génère des suggestions de gig complètes basées sur une description
      */
     static async generateGigSuggestions(req, res) {
         try {
-            const { description } = req.body;
+            const { description, companyId } = req.body;
             if (!description) {
                 return res.status(400).json({
                     error: 'Description is required'
                 });
             }
+            const billingCompanyId = String(companyId || '').trim() || undefined;
+            const tokenGate = await (0, aiTokenBilling_1.assertCompanyHasAiTokens)(billingCompanyId, 1);
+            if (!tokenGate.ok) {
+                return res.status(402).json({
+                    success: false,
+                    error: 'insufficient_tokens',
+                    message: tokenGate.message,
+                    data: { tokens: tokenGate.tokens },
+                });
+            }
+            // First gig for the company: AI draft is free. From the 2nd gig → tokens required.
+            const firstGigFree = Boolean(tokenGate.firstGigFree);
             // Récupérer les données réelles depuis l'API externe et notre base de données
             const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
                 fetchActivities(),
@@ -212,8 +288,42 @@ class AIController {
                 fetchCountries(),
                 fetchCurrencies()
             ]);
+            aiService_1.AIService.takeLastGigSuggestionUsage(); // reset before call
             const suggestions = await aiService_1.AIService.generateGigSuggestions(description, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData);
-            res.status(200).json(suggestions);
+            const providerUsage = aiService_1.AIService.takeLastGigSuggestionUsage();
+            const usage = (0, aiTokenBilling_1.resolveUsageOrEstimate)(providerUsage
+                ? {
+                    provider: providerUsage.provider === 'estimated' ? 'estimated' : providerUsage.provider,
+                    model: providerUsage.model,
+                    inputTokens: providerUsage.inputTokens,
+                    outputTokens: providerUsage.outputTokens,
+                    totalTokens: providerUsage.totalTokens,
+                    estimated: providerUsage.estimated,
+                }
+                : null, description, JSON.stringify(suggestions || {}));
+            if (usage.estimated) {
+                usage.totalTokens = Math.max(2000, usage.totalTokens);
+                usage.outputTokens = usage.totalTokens;
+            }
+            const charge = await (0, aiTokenBilling_1.chargeCompanyAiTokens)({
+                companyId: billingCompanyId,
+                usageId: `gig-suggestions-${Date.now()}`,
+                usage,
+                tool: 'gig.generate_suggestions',
+                // Gig not created yet — ledger row without gigId; linked later if needed
+                gigId: null,
+                meta: { source: 'gig_creation_prompt', firstGigFree },
+                skipCharge: firstGigFree,
+            });
+            res.status(200).json({
+                ...suggestions,
+                usage: {
+                    ...usage,
+                    billed: charge.billed,
+                    balance: charge.tokens,
+                    firstGigFree,
+                },
+            });
         }
         catch (error) {
             console.error('Error generating gig suggestions:', error);
@@ -299,12 +409,23 @@ class AIController {
      */
     static async analyzeTitleAndGenerateDescription(req, res) {
         try {
-            const { title } = req.body;
+            const { title, companyId } = req.body;
             if (!title) {
                 return res.status(400).json({
                     error: 'Title is required'
                 });
             }
+            const billingCompanyId = String(companyId || '').trim() || undefined;
+            const tokenGate = await (0, aiTokenBilling_1.assertCompanyHasAiTokens)(billingCompanyId, 1);
+            if (!tokenGate.ok) {
+                return res.status(402).json({
+                    success: false,
+                    error: 'insufficient_tokens',
+                    message: tokenGate.message,
+                    data: { tokens: tokenGate.tokens },
+                });
+            }
+            const firstGigFree = Boolean(tokenGate.firstGigFree);
             // Récupérer les données réelles depuis l'API externe et notre base de données
             const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
                 fetchActivities(),
@@ -315,9 +436,42 @@ class AIController {
                 fetchCountries(),
                 fetchCurrencies()
             ]);
+            aiService_1.AIService.takeLastGigSuggestionUsage(); // reset before call
             // Utiliser la fonction generateGigSuggestions avec juste le titre comme description
             const suggestions = await aiService_1.AIService.generateGigSuggestions(title, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData);
-            res.status(200).json(suggestions);
+            const providerUsage = aiService_1.AIService.takeLastGigSuggestionUsage();
+            const usage = (0, aiTokenBilling_1.resolveUsageOrEstimate)(providerUsage
+                ? {
+                    provider: providerUsage.provider === 'estimated' ? 'estimated' : providerUsage.provider,
+                    model: providerUsage.model,
+                    inputTokens: providerUsage.inputTokens,
+                    outputTokens: providerUsage.outputTokens,
+                    totalTokens: providerUsage.totalTokens,
+                    estimated: providerUsage.estimated,
+                }
+                : null, title, JSON.stringify(suggestions || {}));
+            if (usage.estimated) {
+                usage.totalTokens = Math.max(2000, usage.totalTokens);
+                usage.outputTokens = usage.totalTokens;
+            }
+            const charge = await (0, aiTokenBilling_1.chargeCompanyAiTokens)({
+                companyId: billingCompanyId,
+                usageId: `gig-analyze-title-${Date.now()}`,
+                usage,
+                tool: 'gig.analyze_title',
+                gigId: null,
+                meta: { source: 'gig_title_analysis', firstGigFree },
+                skipCharge: firstGigFree,
+            });
+            res.status(200).json({
+                ...suggestions,
+                usage: {
+                    ...usage,
+                    billed: charge.billed,
+                    balance: charge.tokens,
+                    firstGigFree,
+                },
+            });
         }
         catch (error) {
             console.error('Error analyzing title:', error);

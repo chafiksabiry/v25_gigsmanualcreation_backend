@@ -236,6 +236,7 @@ export class AIController {
           data: { tokens: tokenGate.tokens },
         });
       }
+      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       const language =
         (typeof req.body?.language === 'string' && req.body.language) ||
@@ -257,13 +258,19 @@ export class AIController {
         usageId: `gig-transcribe-${Date.now()}`,
         usage,
         tool: 'gig.transcribe_audio',
-        meta: { fileName: file.originalname, mime: file.mimetype },
+        meta: { fileName: file.originalname, mime: file.mimetype, firstGigFree },
+        skipCharge: firstGigFree,
       });
 
       return res.status(200).json({
         success: true,
         transcript,
-        usage: { ...usage, billed: charge.billed, balance: charge.tokens },
+        usage: {
+          ...usage,
+          billed: charge.billed,
+          balance: charge.tokens,
+          firstGigFree,
+        },
       });
     } catch (error: any) {
       console.error('Error transcribing audio:', error);
@@ -297,6 +304,8 @@ export class AIController {
           data: { tokens: tokenGate.tokens },
         });
       }
+      // First gig for the company: AI draft is free. From the 2nd gig → tokens required.
+      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
       const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
@@ -348,7 +357,8 @@ export class AIController {
         tool: 'gig.generate_suggestions',
         // Gig not created yet — ledger row without gigId; linked later if needed
         gigId: null,
-        meta: { source: 'gig_creation_prompt' },
+        meta: { source: 'gig_creation_prompt', firstGigFree },
+        skipCharge: firstGigFree,
       });
 
       res.status(200).json({
@@ -357,6 +367,7 @@ export class AIController {
           ...usage,
           billed: charge.billed,
           balance: charge.tokens,
+          firstGigFree,
         },
       });
     } catch (error: any) {
@@ -477,6 +488,7 @@ export class AIController {
           data: { tokens: tokenGate.tokens },
         });
       }
+      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
       const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
@@ -528,7 +540,8 @@ export class AIController {
         usage,
         tool: 'gig.analyze_title',
         gigId: null,
-        meta: { source: 'gig_title_analysis' },
+        meta: { source: 'gig_title_analysis', firstGigFree },
+        skipCharge: firstGigFree,
       });
 
       res.status(200).json({
@@ -537,6 +550,7 @@ export class AIController {
           ...usage,
           billed: charge.billed,
           balance: charge.tokens,
+          firstGigFree,
         },
       });
     } catch (error: any) {
