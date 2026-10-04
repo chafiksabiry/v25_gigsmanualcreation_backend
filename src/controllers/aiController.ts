@@ -286,7 +286,8 @@ export class AIController {
    */
   static async generateGigSuggestions(req: Request, res: Response) {
     try {
-      const { description, companyId } = req.body;
+      const { description, companyId, language } = req.body;
+      const uiLanguage = String(language || '').toLowerCase().startsWith('en') ? 'en' : 'fr';
 
       if (!description) {
         return res.status(400).json({
@@ -327,7 +328,8 @@ export class AIController {
         skillsData,
         timezonesData,
         countriesData,
-        currenciesData
+        currenciesData,
+        uiLanguage
       );
 
       const providerUsage = AIService.takeLastGigSuggestionUsage();
@@ -470,7 +472,8 @@ export class AIController {
    */
   static async analyzeTitleAndGenerateDescription(req: Request, res: Response) {
     try {
-      const { title, companyId } = req.body;
+      const { title, companyId, language } = req.body;
+      const uiLanguage = String(language || '').toLowerCase().startsWith('en') ? 'en' : 'fr';
 
       if (!title) {
         return res.status(400).json({
@@ -511,7 +514,8 @@ export class AIController {
         skillsData,
         timezonesData,
         countriesData,
-        currenciesData
+        currenciesData,
+        uiLanguage
       );
 
       const providerUsage = AIService.takeLastGigSuggestionUsage();

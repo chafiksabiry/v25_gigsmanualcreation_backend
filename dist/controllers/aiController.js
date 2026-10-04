@@ -260,7 +260,8 @@ class AIController {
      */
     static async generateGigSuggestions(req, res) {
         try {
-            const { description, companyId } = req.body;
+            const { description, companyId, language } = req.body;
+            const uiLanguage = String(language || '').toLowerCase().startsWith('en') ? 'en' : 'fr';
             if (!description) {
                 return res.status(400).json({
                     error: 'Description is required'
@@ -289,7 +290,7 @@ class AIController {
                 fetchCurrencies()
             ]);
             aiService_1.AIService.takeLastGigSuggestionUsage(); // reset before call
-            const suggestions = await aiService_1.AIService.generateGigSuggestions(description, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData);
+            const suggestions = await aiService_1.AIService.generateGigSuggestions(description, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData, uiLanguage);
             const providerUsage = aiService_1.AIService.takeLastGigSuggestionUsage();
             const usage = (0, aiTokenBilling_1.resolveUsageOrEstimate)(providerUsage
                 ? {
@@ -409,7 +410,8 @@ class AIController {
      */
     static async analyzeTitleAndGenerateDescription(req, res) {
         try {
-            const { title, companyId } = req.body;
+            const { title, companyId, language } = req.body;
+            const uiLanguage = String(language || '').toLowerCase().startsWith('en') ? 'en' : 'fr';
             if (!title) {
                 return res.status(400).json({
                     error: 'Title is required'
@@ -438,7 +440,7 @@ class AIController {
             ]);
             aiService_1.AIService.takeLastGigSuggestionUsage(); // reset before call
             // Utiliser la fonction generateGigSuggestions avec juste le titre comme description
-            const suggestions = await aiService_1.AIService.generateGigSuggestions(title, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData);
+            const suggestions = await aiService_1.AIService.generateGigSuggestions(title, activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData, uiLanguage);
             const providerUsage = aiService_1.AIService.takeLastGigSuggestionUsage();
             const usage = (0, aiTokenBilling_1.resolveUsageOrEstimate)(providerUsage
                 ? {

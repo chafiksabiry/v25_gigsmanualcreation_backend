@@ -1,9 +1,14 @@
 import { Document, model, Schema } from 'mongoose';
 import mongoose from 'mongoose';
 
+export type LocalizedString = { en?: string; fr?: string };
+export type LocalizedStringList = { en?: string[]; fr?: string[] };
+
 export interface IGig extends Document {
   title: string;
+  title_i18n?: LocalizedString;
   description: string;
+  description_i18n?: LocalizedString;
   category: string;
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
@@ -64,6 +69,7 @@ export interface IGig extends Document {
     };
     transactionCommission?: number;
     additionalDetails?: string;
+    additionalDetails_i18n?: LocalizedString;
   };
   leads: {
     types: Array<{
@@ -92,7 +98,9 @@ export interface IGig extends Document {
     training?: { name: string; url: string }[];
   };
   highlights: string[];
+  highlights_i18n?: LocalizedStringList;
   deliverables: string[];
+  deliverables_i18n?: LocalizedStringList;
   status: 'to_activate' | 'active' | 'inactive' | 'archived';
   /**
    * Per-gig activation checklist.
@@ -124,10 +132,22 @@ export interface IGig extends Document {
   updatedAt: Date;
 }
 
+const i18nStringSchema = {
+  en: { type: String, required: false },
+  fr: { type: String, required: false },
+};
+
+const i18nStringListSchema = {
+  en: [{ type: String }],
+  fr: [{ type: String }],
+};
+
 export const GigSchema = new Schema<IGig>(
   {
     title: { type: String, required: false },
+    title_i18n: { type: i18nStringSchema, required: false },
     description: { type: String, required: false },
+    description_i18n: { type: i18nStringSchema, required: false },
     category: { type: String, required: false },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
@@ -192,6 +212,7 @@ export const GigSchema = new Schema<IGig>(
       },
       transactionCommission: { type: Number, required: false },
       additionalDetails: { type: String, required: false },
+      additionalDetails_i18n: { type: i18nStringSchema, required: false },
     },
     leads: {
       types: [
@@ -239,7 +260,9 @@ export const GigSchema = new Schema<IGig>(
       ],
     },
     highlights: [{ type: String, required: false }],
+    highlights_i18n: { type: i18nStringListSchema, required: false },
     deliverables: [{ type: String, required: false }],
+    deliverables_i18n: { type: i18nStringListSchema, required: false },
     status: {
       type: String,
       enum: ['to_activate', 'active', 'inactive', 'archived'],

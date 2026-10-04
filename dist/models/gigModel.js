@@ -6,9 +6,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Gig = exports.GigSchema = void 0;
 const mongoose_1 = require("mongoose");
 const mongoose_2 = __importDefault(require("mongoose"));
+const i18nStringSchema = {
+    en: { type: String, required: false },
+    fr: { type: String, required: false },
+};
+const i18nStringListSchema = {
+    en: [{ type: String }],
+    fr: [{ type: String }],
+};
 exports.GigSchema = new mongoose_1.Schema({
     title: { type: String, required: false },
+    title_i18n: { type: i18nStringSchema, required: false },
     description: { type: String, required: false },
+    description_i18n: { type: i18nStringSchema, required: false },
     category: { type: String, required: false },
     userId: { type: mongoose_2.default.Schema.Types.ObjectId, ref: 'User', default: null },
     companyId: { type: mongoose_2.default.Schema.Types.ObjectId, ref: 'Company', default: null },
@@ -73,6 +83,7 @@ exports.GigSchema = new mongoose_1.Schema({
         },
         transactionCommission: { type: Number, required: false },
         additionalDetails: { type: String, required: false },
+        additionalDetails_i18n: { type: i18nStringSchema, required: false },
     },
     leads: {
         types: [
@@ -120,7 +131,9 @@ exports.GigSchema = new mongoose_1.Schema({
         ],
     },
     highlights: [{ type: String, required: false }],
+    highlights_i18n: { type: i18nStringListSchema, required: false },
     deliverables: [{ type: String, required: false }],
+    deliverables_i18n: { type: i18nStringListSchema, required: false },
     status: {
         type: String,
         enum: ['to_activate', 'active', 'inactive', 'archived'],
