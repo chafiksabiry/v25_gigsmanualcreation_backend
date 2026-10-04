@@ -1,7 +1,12 @@
 /**
  * HARX prepaid AI tokens — normalize provider usage + charge orchestrator wallet.
  * Providers: Anthropic (Claude), OpenAI, Gemini/Vertex. Fallback: ~4 chars ≈ 1 token.
+ *
+ * Product rule: the company's **first gig** AI draft is free (no balance check, no charge).
+ * From the 2nd gig onward, prepaid AI tokens are required.
  */
+
+import { Gig } from '../models/gigModel';
 
 export type AiProvider = 'anthropic' | 'openai' | 'gemini' | 'estimated';
 
@@ -104,12 +109,36 @@ function getOrchestratorApiBase(): string {
   return String(raw).replace(/\/$/, '');
 }
 
+/** True when the company has zero gigs yet → first-gig AI is free. */
+export async function isFirstGigForCompany(
+  companyId: string | undefined | null
+): Promise<boolean> {
+  const id = String(companyId || '').trim();
+  if (!id) return true;
+  try {
+    const count = await Gig.countDocuments({ companyId: id });
+    return count === 0;
+  } catch (err) {
+    console.warn('[aiTokenBilling] first-gig count failed (treating as first):', err);
+    return true;
+  }
+}
+
 export async function assertCompanyHasAiTokens(
   companyId: string | undefined | null,
-  minRequired = 1
-): Promise<{ ok: boolean; tokens: number; message?: string }> {
+  minRequired = 1,
+  options?: { skipIfFirstGig?: boolean }
+): Promise<{ ok: boolean; tokens: number; message?: string; firstGigFree?: boolean }> {
   const id = String(companyId || '').trim();
   if (!id) return { ok: true, tokens: 0 }; // no company → skip gate (legacy callers)
+
+  if (options?.skipIfFirstGig !== false) {
+    const firstGig = await isFirstGigForCompany(id);
+    if (firstGig) {
+      return { ok: true, tokens: 0, firstGigFree: true };
+    }
+  }
+
   try {
     const base = getOrchestratorApiBase();
     const res = await fetch(
@@ -138,9 +167,14 @@ export async function chargeCompanyAiTokens(opts: {
   tool: string;
   gigId?: string | null;
   meta?: Record<string, unknown>;
-}): Promise<{ billed: boolean; tokens?: number }> {
+  /** When true, skip debit (first gig free). */
+  skipCharge?: boolean;
+}): Promise<{ billed: boolean; tokens?: number; firstGigFree?: boolean }> {
   const id = String(opts.companyId || '').trim();
   if (!id) return { billed: false };
+  if (opts.skipCharge) {
+    return { billed: false, firstGigFree: true };
+  }
   const tokensUsed = Math.max(0, Math.round(opts.usage.totalTokens || 0));
   if (tokensUsed <= 0) return { billed: false };
 
