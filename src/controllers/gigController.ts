@@ -429,11 +429,12 @@ export class GigController {
       }
 
       const gigs = await GigService.getGigsByCompanyId(companyId);
-      const hasGigs = gigs.length > 0;
+      const count = Array.isArray(gigs) ? gigs.length : 0;
+      const hasGigs = count > 0;
 
       res.status(200).json({
         message: "Company gig status retrieved successfully",
-        data: { hasGigs }
+        data: { hasGigs, count }
       });
     } catch (error) {
       console.error("Error in hasCompanyGigs:", error);
