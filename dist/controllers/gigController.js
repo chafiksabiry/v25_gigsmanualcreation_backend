@@ -184,6 +184,8 @@ class GigController {
             }
             // Si on active le gig, vérifier setupSteps + solde + quota plan (maxGigs)
             const wantsActive = String(updateData?.status || '').toLowerCase() === 'active';
+            /** True when this request transitions the gig into `active` (not a no-op re-save). */
+            let becomingActive = false;
             if (wantsActive) {
                 const existingGig = await gigService_1.GigService.getGigById(id);
                 if (existingGig) {
@@ -215,6 +217,8 @@ class GigController {
                     const companyIdRaw = existingGig.companyId._id
                         || existingGig.companyId;
                     const companyId = String(companyIdRaw);
+                    becomingActive =
+                        String(existingGig.status || '').toLowerCase() !== 'active';
                     // Wallet check — soft-fail if escrow service is unreachable
                     try {
                         const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL ||
@@ -340,6 +344,16 @@ class GigController {
                 }
                 catch (err) {
                     console.error('[GigController] deactivate notif import failed', err);
+                }
+            }
+            // New active project → auto-match and notify REPs with score ≥ 50%.
+            if (becomingActive && nextStatus === 'active') {
+                try {
+                    const { triggerMatchingNotificationsForGig } = await Promise.resolve().then(() => __importStar(require('../services/repNotificationClient')));
+                    void triggerMatchingNotificationsForGig(updatedGig._id).catch((err) => console.error('[GigController] auto-match notify failed', err));
+                }
+                catch (err) {
+                    console.error('[GigController] auto-match notify import failed', err);
                 }
             }
             console.log('✅ BACKEND - Gig updated successfully:', updatedGig._id);

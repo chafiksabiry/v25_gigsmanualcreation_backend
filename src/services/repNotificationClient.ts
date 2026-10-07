@@ -121,3 +121,80 @@ export async function notifyGigDeactivated(gig: {
     )
   );
 }
+
+const DEFAULT_MATCH_WEIGHTS = {
+  skills: 0,
+  languages: 0,
+  experience: 0,
+  region: 0,
+  timezone: 0,
+  industry: 0,
+  activity: 0,
+};
+
+/**
+ * When a gig becomes active, run matching and notify REPs with score ≥ 50%.
+ * Reuses matching backend `POST /matches/gig/:id` → `notifyMatchingOpportunities`.
+ */
+export async function triggerMatchingNotificationsForGig(
+  gigId: unknown
+): Promise<void> {
+  const gId = resolveId(gigId);
+  if (!gId) return;
+
+  let weights: Record<string, number> = { ...DEFAULT_MATCH_WEIGHTS };
+  try {
+    const weightsRes = await axios.get(
+      `${MATCHING_API}/gig-matching-weights/${encodeURIComponent(gId)}`,
+      { timeout: 8000, validateStatus: () => true }
+    );
+    if (weightsRes.status < 400) {
+      const saved =
+        weightsRes.data?.data?.matchingWeights ||
+        weightsRes.data?.matchingWeights ||
+        weightsRes.data?.data ||
+        weightsRes.data;
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        weights = { ...DEFAULT_MATCH_WEIGHTS, ...saved };
+      }
+    }
+  } catch (err: any) {
+    console.warn(
+      '[Gigs RepNotif] load match weights failed, using defaults',
+      err?.message || err
+    );
+  }
+
+  try {
+    const res = await axios.post(
+      `${MATCHING_API}/matches/gig/${encodeURIComponent(gId)}`,
+      { weights },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 120000,
+        validateStatus: () => true,
+      }
+    );
+    if (res.status >= 400) {
+      console.error(
+        '[Gigs RepNotif] auto-match notify failed',
+        gId,
+        res.status,
+        res.data?.message || res.statusText
+      );
+      return;
+    }
+    const count = Array.isArray(res.data?.preferedmatches)
+      ? res.data.preferedmatches.length
+      : 0;
+    console.log(
+      `[Gigs RepNotif] auto-match ran for gig ${gId} (${count} candidates; ≥50% notified by matching service)`
+    );
+  } catch (err: any) {
+    console.error(
+      '[Gigs RepNotif] auto-match request error',
+      gId,
+      err?.message || err
+    );
+  }
+}
