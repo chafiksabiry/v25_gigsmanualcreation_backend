@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -10,6 +43,8 @@ const gigRepository_1 = require("../repositories/gigRepository");
 const i18n_iso_countries_1 = __importDefault(require("i18n-iso-countries"));
 const leadModel_1 = require("../models/leadModel");
 const countryModel_1 = require("../models/countryModel");
+const gigModel_1 = require("../models/gigModel");
+const planQuotaService_1 = require("../services/planQuotaService");
 // Initialiser les pays en français et en anglais
 i18n_iso_countries_1.default.registerLocale(require('i18n-iso-countries/langs/fr.json'));
 i18n_iso_countries_1.default.registerLocale(require('i18n-iso-countries/langs/en.json'));
@@ -33,8 +68,33 @@ class GigController {
     }
     static async createGig(req, res) {
         try {
-            if (!req.body.title || !req.body.description) {
-                return res.status(400).json({ message: "Title and description are required", data: null });
+            if (!req.body.title || !String(req.body.title).trim()) {
+                return res.status(400).json({ message: "Title is required", data: null });
+            }
+            // Description is optional (call-center title-only create). Default to title when empty.
+            if (!req.body.description || !String(req.body.description).trim()) {
+                req.body.description = String(req.body.title).trim();
+            }
+            const isValidObjectId = (value) => typeof value === "string" && mongoose_1.default.Types.ObjectId.isValid(value);
+            // Drop empty / non-ObjectId refs so title-only creates don't fail BSON cast.
+            if (!isValidObjectId(req.body.destination_zone)) {
+                delete req.body.destination_zone;
+            }
+            if (req.body.commission && !isValidObjectId(req.body.commission.currency)) {
+                delete req.body.commission.currency;
+                if (!req.body.commission.currency &&
+                    !req.body.commission.commission_per_call &&
+                    !req.body.commission.transactionCommission) {
+                    // Keep commission object optional; empty currency alone is fine after delete.
+                }
+            }
+            if (req.body.availability) {
+                if (!isValidObjectId(req.body.availability.time_zone)) {
+                    delete req.body.availability.time_zone;
+                }
+                if (Array.isArray(req.body.availability.timeZones)) {
+                    req.body.availability.timeZones = req.body.availability.timeZones.filter(isValidObjectId);
+                }
             }
             // Valider que destination_zone est un ObjectId valide si fourni
             if (req.body.destination_zone && !mongoose_1.default.Types.ObjectId.isValid(req.body.destination_zone)) {
@@ -122,44 +182,46 @@ class GigController {
                     data: null
                 });
             }
-            // Si on active le gig, vérifier le solde de la company + setupSteps
+            // Si on active le gig, vérifier setupSteps + solde + quota plan (maxGigs)
             if (updateData.status === 'active') {
-                try {
-                    const existingGig = await gigService_1.GigService.getGigById(id);
-                    if (existingGig) {
-                        const REQUIRED_SETUP_KEYS = [
-                            'telephony',
-                            'uploadContacts',
-                            'callScript',
-                            'knowledgeBase',
-                            'repOnboarding',
-                            'sessionPlanning',
-                        ];
-                        const steps = existingGig.setupSteps || {};
-                        const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
-                        if (missingSteps.length > 0) {
-                            console.log(`❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`, missingSteps.join(', '));
-                            return res.status(400).json({
-                                message: 'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
-                                data: { missingSteps },
-                            });
-                        }
+                const existingGig = await gigService_1.GigService.getGigById(id);
+                if (existingGig) {
+                    const REQUIRED_SETUP_KEYS = [
+                        'telephony',
+                        'uploadContacts',
+                        'callScript',
+                        'knowledgeBase',
+                        'repOnboarding',
+                        'sessionPlanning',
+                    ];
+                    const steps = existingGig.setupSteps || {};
+                    const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
+                    if (missingSteps.length > 0) {
+                        console.log(`❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`, missingSteps.join(', '));
+                        return res.status(400).json({
+                            message: 'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
+                            data: { missingSteps },
+                        });
                     }
-                    if (existingGig && existingGig.companyId) {
-                        const companyId = existingGig.companyId._id || existingGig.companyId;
-                        const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL || 'https://v25comporchestratorback-production.up.railway.app';
+                }
+                if (existingGig && existingGig.companyId) {
+                    const companyId = existingGig.companyId._id || existingGig.companyId;
+                    // Wallet check — soft-fail if escrow service is unreachable
+                    try {
+                        const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL ||
+                            'https://v25comporchestratorback-production.up.railway.app';
                         console.log(`🔍 BACKEND - Verifying balance for company ${companyId} at ${compOrchestratorUrl}`);
                         const balanceResponse = await fetch(`${compOrchestratorUrl}/api/escrow/wallet/${companyId}`);
                         if (balanceResponse.ok) {
-                            const balanceData = await balanceResponse.json();
+                            const balanceData = (await balanceResponse.json());
                             console.log(`🔍 BACKEND - Balance data received:`, JSON.stringify(balanceData));
                             if (balanceData.success && balanceData.data) {
                                 const balance = balanceData.data.balance || 0;
                                 if (balance <= 0) {
                                     console.log(`❌ BACKEND - Insufficient balance (${balance} €) for company ${companyId}`);
                                     return res.status(400).json({
-                                        message: "Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.",
-                                        data: null
+                                        message: 'Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.',
+                                        data: null,
                                     });
                                 }
                             }
@@ -168,17 +230,102 @@ class GigController {
                             console.warn(`⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`);
                         }
                     }
+                    catch (balanceErr) {
+                        console.error('⚠️ BACKEND - Failed to verify company balance:', balanceErr);
+                    }
+                    // Plan active-gig quota — create many OK; activate only up to maxGigs.
+                    // Optional body.deactivateGigIds: switch (deactivate those, then activate).
+                    const alreadyActive = String(existingGig.status || '').toLowerCase() === 'active';
+                    if (!alreadyActive) {
+                        const rawDeactivate = Array.isArray(updateData.deactivateGigIds)
+                            ? updateData.deactivateGigIds
+                            : [];
+                        const deactivateGigIds = rawDeactivate
+                            .map((x) => String(x || '').trim())
+                            .filter((x) => mongoose_1.default.Types.ObjectId.isValid(x) && x !== String(id));
+                        delete updateData.deactivateGigIds;
+                        try {
+                            const quota = await (0, planQuotaService_1.resolveCompanyGigQuota)(String(companyId));
+                            const otherActive = await gigModel_1.Gig.find({
+                                companyId,
+                                status: 'active',
+                                _id: { $ne: id },
+                            })
+                                .select('_id title status')
+                                .lean();
+                            const deactivateSet = new Set(deactivateGigIds);
+                            const toDeactivate = otherActive.filter((g) => deactivateSet.has(String(g._id)));
+                            const remainingActive = otherActive.length - toDeactivate.length;
+                            if (remainingActive + 1 > quota.maxGigs) {
+                                console.log(`❌ BACKEND - Active gig limit for company ${companyId}: ` +
+                                    `${otherActive.length} active, max=${quota.maxGigs}, ` +
+                                    `deactivate=${toDeactivate.length}`);
+                                return res.status(403).json({
+                                    code: 'ACTIVE_GIG_LIMIT',
+                                    message: `Votre plan${quota.planName ? ` ${quota.planName}` : ''} permet ` +
+                                        `${quota.maxGigs} GIG actif${quota.maxGigs > 1 ? 's' : ''} maximum. ` +
+                                        `Basculer (désactiver un GIG actif) ou passer au plan supérieur.`,
+                                    data: {
+                                        maxGigs: quota.maxGigs,
+                                        planName: quota.planName,
+                                        nextPlanHint: quota.nextPlanHint,
+                                        activeGigs: otherActive.map((g) => ({
+                                            _id: String(g._id),
+                                            title: String(g.title || 'Gig'),
+                                        })),
+                                    },
+                                });
+                            }
+                            if (toDeactivate.length > 0) {
+                                const ids = toDeactivate.map((g) => g._id);
+                                await gigModel_1.Gig.updateMany({ _id: { $in: ids }, companyId }, { $set: { status: 'inactive' } });
+                                try {
+                                    const { notifyGigDeactivated } = await Promise.resolve().then(() => __importStar(require('../services/repNotificationClient')));
+                                    for (const g of toDeactivate) {
+                                        void notifyGigDeactivated({
+                                            ...g,
+                                            status: 'inactive',
+                                            companyId,
+                                        }).catch((err) => console.error('[GigController] switch deactivate notif failed', err));
+                                    }
+                                }
+                                catch (err) {
+                                    console.error('[GigController] switch deactivate notif import failed', err);
+                                }
+                                console.log(`✅ BACKEND - Switched active gigs: deactivated ${ids.length} before activating ${id}`);
+                            }
+                        }
+                        catch (quotaErr) {
+                            console.error('❌ BACKEND - Active gig quota check failed:', quotaErr);
+                            return res.status(500).json({
+                                message: 'Impossible de vérifier la limite de GIG actifs. Réessayez.',
+                                data: null,
+                            });
+                        }
+                    }
+                    else {
+                        delete updateData.deactivateGigIds;
+                    }
                 }
-                catch (checkError) {
-                    console.error('⚠️ BACKEND - Failed to verify company balance:', checkError);
-                    // Permettre de continuer en cas d'erreur de connexion au microservice pour éviter de bloquer l'application
-                }
+            }
+            else {
+                delete updateData.deactivateGigIds;
             }
             console.log('🔍 BACKEND - Calling GigService.updateGig...');
             const updatedGig = await gigService_1.GigService.updateGig(id, updateData);
             if (!updatedGig) {
                 console.log('❌ BACKEND - Gig not found:', id);
                 return res.status(404).json({ message: "Gig not found", data: null });
+            }
+            const nextStatus = String(updateData?.status || '').toLowerCase();
+            if (nextStatus === 'inactive' || nextStatus === 'archived') {
+                try {
+                    const { notifyGigDeactivated } = await Promise.resolve().then(() => __importStar(require('../services/repNotificationClient')));
+                    void notifyGigDeactivated(updatedGig).catch((err) => console.error('[GigController] deactivate notif failed', err));
+                }
+                catch (err) {
+                    console.error('[GigController] deactivate notif import failed', err);
+                }
             }
             console.log('✅ BACKEND - Gig updated successfully:', updatedGig._id);
             return res.status(200).json({
@@ -350,10 +497,11 @@ class GigController {
                 return res.status(400).json({ message: "Invalid Company ID format", data: null });
             }
             const gigs = await gigService_1.GigService.getGigsByCompanyId(companyId);
-            const hasGigs = gigs.length > 0;
+            const count = Array.isArray(gigs) ? gigs.length : 0;
+            const hasGigs = count > 0;
             res.status(200).json({
                 message: "Company gig status retrieved successfully",
-                data: { hasGigs }
+                data: { hasGigs, count }
             });
         }
         catch (error) {

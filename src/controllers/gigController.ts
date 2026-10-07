@@ -5,6 +5,8 @@ import { GigRepository } from "../repositories/gigRepository";
 import countries from 'i18n-iso-countries';
 import { Lead } from "../models/leadModel";
 import { Country } from "../models/countryModel";
+import { Gig } from "../models/gigModel";
+import { resolveCompanyGigQuota } from "../services/planQuotaService";
 
 // Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
@@ -167,59 +169,184 @@ export class GigController {
         });
       }
 
-      // Si on active le gig, vérifier le solde de la company + setupSteps
+      // Si on active le gig, vérifier setupSteps + solde + quota plan (maxGigs)
       if (updateData.status === 'active') {
-        try {
-          const existingGig = await GigService.getGigById(id);
-          if (existingGig) {
-            const REQUIRED_SETUP_KEYS = [
-              'telephony',
-              'uploadContacts',
-              'callScript',
-              'knowledgeBase',
-              'repOnboarding',
-              'sessionPlanning',
-            ] as const;
-            const steps = (existingGig as any).setupSteps || {};
-            const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
-            if (missingSteps.length > 0) {
-              console.log(
-                `❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`,
-                missingSteps.join(', ')
-              );
-              return res.status(400).json({
-                message:
-                  'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
-                data: { missingSteps },
-              });
-            }
+        const existingGig = await GigService.getGigById(id);
+        if (existingGig) {
+          const REQUIRED_SETUP_KEYS = [
+            'telephony',
+            'uploadContacts',
+            'callScript',
+            'knowledgeBase',
+            'repOnboarding',
+            'sessionPlanning',
+          ] as const;
+          const steps = (existingGig as any).setupSteps || {};
+          const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
+          if (missingSteps.length > 0) {
+            console.log(
+              `❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`,
+              missingSteps.join(', ')
+            );
+            return res.status(400).json({
+              message:
+                'Impossible d\'activer ce gig : complétez toutes les étapes de configuration avant l\'activation.',
+              data: { missingSteps },
+            });
           }
-          if (existingGig && existingGig.companyId) {
-            const companyId = existingGig.companyId._id || existingGig.companyId;
-            const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL || 'https://v25comporchestratorback-production.up.railway.app';
-            console.log(`🔍 BACKEND - Verifying balance for company ${companyId} at ${compOrchestratorUrl}`);
-            const balanceResponse = await fetch(`${compOrchestratorUrl}/api/escrow/wallet/${companyId}`);
+        }
+        if (existingGig && existingGig.companyId) {
+          const companyId = existingGig.companyId._id || existingGig.companyId;
+
+          // Wallet check — soft-fail if escrow service is unreachable
+          try {
+            const compOrchestratorUrl =
+              process.env.COMPORCHESTRATOR_BACK_URL ||
+              'https://v25comporchestratorback-production.up.railway.app';
+            console.log(
+              `🔍 BACKEND - Verifying balance for company ${companyId} at ${compOrchestratorUrl}`
+            );
+            const balanceResponse = await fetch(
+              `${compOrchestratorUrl}/api/escrow/wallet/${companyId}`
+            );
             if (balanceResponse.ok) {
-              const balanceData = await balanceResponse.json() as any;
-              console.log(`🔍 BACKEND - Balance data received:`, JSON.stringify(balanceData));
+              const balanceData = (await balanceResponse.json()) as any;
+              console.log(
+                `🔍 BACKEND - Balance data received:`,
+                JSON.stringify(balanceData)
+              );
               if (balanceData.success && balanceData.data) {
                 const balance = balanceData.data.balance || 0;
                 if (balance <= 0) {
-                  console.log(`❌ BACKEND - Insufficient balance (${balance} €) for company ${companyId}`);
+                  console.log(
+                    `❌ BACKEND - Insufficient balance (${balance} €) for company ${companyId}`
+                  );
                   return res.status(400).json({
-                    message: "Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.",
-                    data: null
+                    message:
+                      'Solde insuffisant. Vous devez alimenter votre compte pour activer ce gig.',
+                    data: null,
                   });
                 }
               }
             } else {
-              console.warn(`⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`);
+              console.warn(
+                `⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`
+              );
             }
+          } catch (balanceErr) {
+            console.error(
+              '⚠️ BACKEND - Failed to verify company balance:',
+              balanceErr
+            );
           }
-        } catch (checkError) {
-          console.error('⚠️ BACKEND - Failed to verify company balance:', checkError);
-          // Permettre de continuer en cas d'erreur de connexion au microservice pour éviter de bloquer l'application
+
+          // Plan active-gig quota — create many OK; activate only up to maxGigs.
+          // Optional body.deactivateGigIds: switch (deactivate those, then activate).
+          const alreadyActive =
+            String((existingGig as any).status || '').toLowerCase() === 'active';
+          if (!alreadyActive) {
+            const rawDeactivate = Array.isArray(
+              (updateData as any).deactivateGigIds
+            )
+              ? (updateData as any).deactivateGigIds
+              : [];
+            const deactivateGigIds = rawDeactivate
+              .map((x: unknown) => String(x || '').trim())
+              .filter(
+                (x: string) =>
+                  mongoose.Types.ObjectId.isValid(x) && x !== String(id)
+              );
+            delete (updateData as any).deactivateGigIds;
+
+            try {
+              const quota = await resolveCompanyGigQuota(String(companyId));
+              const otherActive = await Gig.find({
+                companyId,
+                status: 'active',
+                _id: { $ne: id },
+              })
+                .select('_id title status')
+                .lean();
+
+              const deactivateSet = new Set(deactivateGigIds);
+              const toDeactivate = otherActive.filter((g) =>
+                deactivateSet.has(String(g._id))
+              );
+              const remainingActive = otherActive.length - toDeactivate.length;
+
+              if (remainingActive + 1 > quota.maxGigs) {
+                console.log(
+                  `❌ BACKEND - Active gig limit for company ${companyId}: ` +
+                    `${otherActive.length} active, max=${quota.maxGigs}, ` +
+                    `deactivate=${toDeactivate.length}`
+                );
+                return res.status(403).json({
+                  code: 'ACTIVE_GIG_LIMIT',
+                  message:
+                    `Votre plan${quota.planName ? ` ${quota.planName}` : ''} permet ` +
+                    `${quota.maxGigs} GIG actif${quota.maxGigs > 1 ? 's' : ''} maximum. ` +
+                    `Basculer (désactiver un GIG actif) ou passer au plan supérieur.`,
+                  data: {
+                    maxGigs: quota.maxGigs,
+                    planName: quota.planName,
+                    nextPlanHint: quota.nextPlanHint,
+                    activeGigs: otherActive.map((g) => ({
+                      _id: String(g._id),
+                      title: String((g as any).title || 'Gig'),
+                    })),
+                  },
+                });
+              }
+
+              if (toDeactivate.length > 0) {
+                const ids = toDeactivate.map((g) => g._id);
+                await Gig.updateMany(
+                  { _id: { $in: ids }, companyId },
+                  { $set: { status: 'inactive' } }
+                );
+                try {
+                  const { notifyGigDeactivated } = await import(
+                    '../services/repNotificationClient'
+                  );
+                  for (const g of toDeactivate) {
+                    void notifyGigDeactivated({
+                      ...g,
+                      status: 'inactive',
+                      companyId,
+                    } as any).catch((err) =>
+                      console.error(
+                        '[GigController] switch deactivate notif failed',
+                        err
+                      )
+                    );
+                  }
+                } catch (err) {
+                  console.error(
+                    '[GigController] switch deactivate notif import failed',
+                    err
+                  );
+                }
+                console.log(
+                  `✅ BACKEND - Switched active gigs: deactivated ${ids.length} before activating ${id}`
+                );
+              }
+            } catch (quotaErr) {
+              console.error(
+                '❌ BACKEND - Active gig quota check failed:',
+                quotaErr
+              );
+              return res.status(500).json({
+                message:
+                  'Impossible de vérifier la limite de GIG actifs. Réessayez.',
+                data: null,
+              });
+            }
+          } else {
+            delete (updateData as any).deactivateGigIds;
+          }
         }
+      } else {
+        delete (updateData as any).deactivateGigIds;
       }
 
       console.log('🔍 BACKEND - Calling GigService.updateGig...');
