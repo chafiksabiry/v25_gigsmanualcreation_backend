@@ -183,7 +183,8 @@ class GigController {
                 });
             }
             // Si on active le gig, vérifier setupSteps + solde + quota plan (maxGigs)
-            if (updateData.status === 'active') {
+            const wantsActive = String(updateData?.status || '').toLowerCase() === 'active';
+            if (wantsActive) {
                 const existingGig = await gigService_1.GigService.getGigById(id);
                 if (existingGig) {
                     const REQUIRED_SETUP_KEYS = [
@@ -204,8 +205,16 @@ class GigController {
                         });
                     }
                 }
+                if (!existingGig?.companyId) {
+                    return res.status(400).json({
+                        message: 'Impossible d\'activer ce gig : companyId manquant.',
+                        data: null,
+                    });
+                }
                 if (existingGig && existingGig.companyId) {
-                    const companyId = existingGig.companyId._id || existingGig.companyId;
+                    const companyIdRaw = existingGig.companyId._id
+                        || existingGig.companyId;
+                    const companyId = String(companyIdRaw);
                     // Wallet check — soft-fail if escrow service is unreachable
                     try {
                         const compOrchestratorUrl = process.env.COMPORCHESTRATOR_BACK_URL ||
@@ -245,14 +254,20 @@ class GigController {
                             .filter((x) => mongoose_1.default.Types.ObjectId.isValid(x) && x !== String(id));
                         delete updateData.deactivateGigIds;
                         try {
-                            const quota = await (0, planQuotaService_1.resolveCompanyGigQuota)(String(companyId));
+                            const quota = await (0, planQuotaService_1.resolveCompanyGigQuota)(companyId);
+                            const companyOid = mongoose_1.default.Types.ObjectId.isValid(companyId)
+                                ? new mongoose_1.default.Types.ObjectId(companyId)
+                                : companyId;
                             const otherActive = await gigModel_1.Gig.find({
-                                companyId,
+                                companyId: companyOid,
                                 status: 'active',
                                 _id: { $ne: id },
                             })
                                 .select('_id title status')
                                 .lean();
+                            console.log(`🔍 BACKEND - Active gig quota check company=${companyId} ` +
+                                `otherActive=${otherActive.length} max=${quota.maxGigs} ` +
+                                `deactivateRequested=${deactivateGigIds.length}`);
                             const deactivateSet = new Set(deactivateGigIds);
                             const toDeactivate = otherActive.filter((g) => deactivateSet.has(String(g._id)));
                             const remainingActive = otherActive.length - toDeactivate.length;
