@@ -1,18 +1,10 @@
 "use strict";
 /**
- * Resolves the company's active-gig quota from the company orchestrator
- * subscription (Stripe-synced `maxGigs`). Falls back by plan name when
- * metadata is missing so STARTER stays capped at 1.
+ * Active-gig quota from the subscription plan metadata (ACTIVE GIGS / Active GIGs).
+ * The metadata number is used as-is. Missing metadata stays at 1.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveCompanyGigQuota = resolveCompanyGigQuota;
-const PLAN_CEILINGS = {
-    STARTER: 1,
-    RUNNER: 10,
-    GROWTH: 10,
-    SCALER: 30,
-    SCALE: 30,
-};
 const NEXT_PLAN = {
     STARTER: 'RUNNER',
     RUNNER: 'SCALER',
@@ -23,18 +15,35 @@ function orchestratorBaseUrl() {
         'https://v25comporchestratorback-production.up.railway.app';
     return String(raw).replace(/\/$/, '').replace(/\/api$/i, '');
 }
-function resolveMaxGigs(planName, raw) {
-    const ceiling = planName ? PLAN_CEILINGS[planName] : undefined;
+function metadataNumber(metadata, prefixes) {
+    if (!metadata || typeof metadata !== 'object')
+        return null;
+    const norm = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const wanted = prefixes.map(norm);
+    const entries = Object.entries(metadata);
+    for (const w of wanted) {
+        for (const [key, raw] of entries) {
+            const nk = norm(key);
+            if (nk !== w && !nk.startsWith(w))
+                continue;
+            const match = String(raw ?? '').match(/(\d+(?:[.,]\d+)?)/);
+            if (!match)
+                continue;
+            const n = Number(match[1].replace(',', '.'));
+            if (Number.isFinite(n) && n >= 0)
+                return Math.round(n);
+        }
+    }
+    return null;
+}
+function resolveMaxGigs(raw, metadata) {
+    const fromMeta = metadataNumber(metadata, ['activegigs', 'maxgigs']);
+    if (fromMeta != null)
+        return fromMeta;
     const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) {
-        return ceiling ?? 1;
-    }
-    const rounded = Math.round(n);
-    if (ceiling != null) {
-        // Never exceed known plan ceiling (STARTER must stay at 1).
-        return Math.min(rounded, ceiling);
-    }
-    return rounded;
+    if (!Number.isFinite(n) || n < 0)
+        return 1;
+    return Math.round(n);
 }
 async function resolveCompanyGigQuota(companyId) {
     const base = orchestratorBaseUrl();
@@ -50,8 +59,9 @@ async function resolveCompanyGigQuota(companyId) {
                 const plan = json.data.planId && typeof json.data.planId === 'object'
                     ? json.data.planId
                     : {};
-                const name = String(plan.name || '').toUpperCase() || null;
-                const maxGigs = resolveMaxGigs(name, plan.maxGigs);
+                const name = String(plan.name || json.limits?.planName || '').toUpperCase() || null;
+                const metadata = json.limits?.metadata || plan.metadata;
+                const maxGigs = resolveMaxGigs(json.limits?.maxGigs ?? plan.maxGigs, metadata);
                 console.log(`[planQuota] company=${companyId} plan=${name || '?'} maxGigs=${maxGigs}`);
                 return {
                     maxGigs,
