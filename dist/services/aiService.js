@@ -733,6 +733,91 @@ class AIService {
         }
         return { en: fallback, fr: fallback };
     }
+    static narrativeLooksFrench(value) {
+        if (/[àâäéèêëïîôùûüçœ]/i.test(value))
+            return true;
+        const tokens = value.toLowerCase().split(/[^a-zàâäéèêëïîôùûüç']+/).filter(Boolean);
+        const markers = new Set([
+            'les', 'des', 'une', 'pour', 'dans', 'avec', 'nous', 'vous', 'vos', 'notre', 'cette',
+            'sont', 'est', 'appel', 'appels', 'representant', 'représentant', 'travail', 'flexible',
+            'distance', 'satisfaction', 'effectues', 'effectués', 'planifiees', 'planifiées',
+            'remuneration', 'rémunération', 'onboarding',
+        ]);
+        let hits = 0;
+        for (const token of tokens)
+            if (markers.has(token))
+                hits += 1;
+        return hits >= 2;
+    }
+    static narrativeSide(bundle, side) {
+        if (bundle && typeof bundle === 'object' && !Array.isArray(bundle)) {
+            const value = bundle[side];
+            if (Array.isArray(value))
+                return value.map((item) => String(item)).join(' ').trim();
+            if (typeof value === 'string')
+                return value.trim();
+        }
+        return '';
+    }
+    /** True when en/fr are missing, identical, or both still French. */
+    static narrativeNeedsTranslation(bundle, plain) {
+        const en = this.narrativeSide(bundle, 'en');
+        const fr = this.narrativeSide(bundle, 'fr');
+        const plainText = Array.isArray(plain) ? plain.map((item) => String(item)).join(' ') : String(plain || '');
+        const source = `${en} ${fr} ${plainText}`.trim();
+        if (!source)
+            return false;
+        if (!en || !fr)
+            return true;
+        if (en === fr)
+            return true;
+        if (this.narrativeLooksFrench(en) && this.narrativeLooksFrench(fr))
+            return true;
+        return false;
+    }
+    /**
+     * One short completion so job titles, description, highlights and deliverables
+     * exist in real English and real French. Skipped when both sides already differ.
+     */
+    static async repairGigNarrativeLanguages(parsed) {
+        const needs = this.narrativeNeedsTranslation(parsed.jobTitles_i18n, parsed.jobTitles) ||
+            this.narrativeNeedsTranslation(parsed.jobDescription_i18n || parsed.description_i18n, parsed.jobDescription || parsed.description) ||
+            this.narrativeNeedsTranslation(parsed.highlights_i18n, parsed.highlights) ||
+            this.narrativeNeedsTranslation(parsed.deliverables_i18n, parsed.deliverables);
+        if (!needs)
+            return;
+        const payload = {
+            jobTitles: parsed.jobTitles_i18n || parsed.jobTitles || [],
+            jobDescription: parsed.jobDescription_i18n || parsed.jobDescription || parsed.description || '',
+            highlights: parsed.highlights_i18n || parsed.highlights || [],
+            deliverables: parsed.deliverables_i18n || parsed.deliverables || [],
+        };
+        const llm = await callLLMWithFallback({
+            systemPrompt: 'You translate gig listing copy. Return only JSON with jobTitles, jobDescription, highlights and deliverables. Each value is {"en": ..., "fr": ...}. Lists keep the same item count. "en" is natural English. "fr" is natural French. Never copy one language into the other.',
+            userPrompt: JSON.stringify(payload),
+            openaiModel: DEFAULT_OPENAI_MODEL,
+            temperature: 0.2,
+            maxTokens: 1800,
+            forceJson: true,
+        });
+        if (llm.usage && AIService.lastGigSuggestionUsage) {
+            AIService.lastGigSuggestionUsage = {
+                ...AIService.lastGigSuggestionUsage,
+                inputTokens: AIService.lastGigSuggestionUsage.inputTokens + (llm.usage.inputTokens || 0),
+                outputTokens: AIService.lastGigSuggestionUsage.outputTokens + (llm.usage.outputTokens || 0),
+                totalTokens: AIService.lastGigSuggestionUsage.totalTokens + (llm.usage.totalTokens || 0),
+            };
+        }
+        const fixed = this.parseOpenAIResponse(llm.content);
+        if (fixed?.jobTitles)
+            parsed.jobTitles_i18n = fixed.jobTitles;
+        if (fixed?.jobDescription)
+            parsed.jobDescription_i18n = fixed.jobDescription;
+        if (fixed?.highlights)
+            parsed.highlights_i18n = fixed.highlights;
+        if (fixed?.deliverables)
+            parsed.deliverables_i18n = fixed.deliverables;
+    }
     /** Attach *_i18n fields and set plain title/description from preferred UI language. */
     static applyGigBilingualFields(parsed, preferred = 'fr') {
         const jobTitlesList = Array.isArray(parsed.jobTitles)
@@ -848,7 +933,7 @@ CRITICAL LANGUAGE RULE (read first):
 - ALWAYS generate bilingual French AND English for human-readable fields.
 - Provide BOTH:
   • plain arrays/strings (jobTitles, jobDescription, highlights, deliverables, additionalDetails, flexibility) in the UI language: ${uiLanguage === 'fr' ? 'French' : 'English'}
-  • matching *_i18n objects with BOTH "en" and "fr" filled (never leave one language empty).
+  • matching *_i18n objects with BOTH "en" and "fr" filled. "en" is English and "fr" is French. Never copy the same sentence into both languages.
 - Keep technical identifiers untouched: MongoDB ObjectIds, ISO codes, currency codes, IANA timezones, weekday names (Monday, Tuesday, ...), proficiency codes (A1..C2).
 
 IMPORTANT:
@@ -1023,7 +1108,7 @@ JSON format:
 }`;
         return retryWithBackoff(async () => {
             const llm = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Always produce bilingual French AND English for narrative fields (jobTitles_i18n, jobDescription_i18n, highlights_i18n, deliverables_i18n, additionalDetails_i18n). Plain fields use the requested UI language. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
+                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Always produce bilingual French AND English for narrative fields (jobTitles_i18n, jobDescription_i18n, highlights_i18n, deliverables_i18n, additionalDetails_i18n). "en" must be English and "fr" must be French. Never copy one language into the other. Plain fields use the requested UI language. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
@@ -1045,7 +1130,14 @@ JSON format:
                 AIService.lastGigSuggestionUsage = null;
             }
             try {
-                const parsedResponse = this.applyGigBilingualFields(this.parseOpenAIResponse(content), uiLanguage);
+                const parsed = this.parseOpenAIResponse(content);
+                try {
+                    await this.repairGigNarrativeLanguages(parsed);
+                }
+                catch (repairError) {
+                    console.warn('⚠️ Traduction bilingue des suggestions ignorée:', repairError);
+                }
+                const parsedResponse = this.applyGigBilingualFields(parsed, uiLanguage);
                 const rawDestinationZone = parsedResponse.destination_zone;
                 parsedResponse.destination_zone = this.normalizeDestinationZone(rawDestinationZone, countriesData, description);
                 console.log(`🔍 destination_zone normalisé: ${parsedResponse.destination_zone || '(vide)'}`);
