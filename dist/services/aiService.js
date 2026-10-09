@@ -783,7 +783,8 @@ class AIService {
         const needs = this.narrativeNeedsTranslation(parsed.jobTitles_i18n, parsed.jobTitles) ||
             this.narrativeNeedsTranslation(parsed.jobDescription_i18n || parsed.description_i18n, parsed.jobDescription || parsed.description) ||
             this.narrativeNeedsTranslation(parsed.highlights_i18n, parsed.highlights) ||
-            this.narrativeNeedsTranslation(parsed.deliverables_i18n, parsed.deliverables);
+            this.narrativeNeedsTranslation(parsed.deliverables_i18n, parsed.deliverables) ||
+            this.narrativeNeedsTranslation(parsed.commission?.additionalDetails_i18n, parsed.commission?.additionalDetails);
         if (!needs)
             return;
         const payload = {
@@ -791,9 +792,10 @@ class AIService {
             jobDescription: parsed.jobDescription_i18n || parsed.jobDescription || parsed.description || '',
             highlights: parsed.highlights_i18n || parsed.highlights || [],
             deliverables: parsed.deliverables_i18n || parsed.deliverables || [],
+            additionalDetails: parsed.commission?.additionalDetails_i18n || parsed.commission?.additionalDetails || '',
         };
         const llm = await callLLMWithFallback({
-            systemPrompt: 'You translate gig listing copy. Return only JSON with jobTitles, jobDescription, highlights and deliverables. Each value is {"en": ..., "fr": ...}. Lists keep the same item count. "en" is natural English. "fr" is natural French. Never copy one language into the other.',
+            systemPrompt: 'You translate gig listing copy. Return only JSON with jobTitles, jobDescription, highlights, deliverables and additionalDetails. Each value is {"en": ..., "fr": ...}. Lists keep the same item count. "en" is natural English. "fr" is natural French. Never copy one language into the other. Do not add amounts that are not already in the text.',
             userPrompt: JSON.stringify(payload),
             openaiModel: DEFAULT_OPENAI_MODEL,
             temperature: 0.2,
@@ -817,6 +819,81 @@ class AIService {
             parsed.highlights_i18n = fixed.highlights;
         if (fixed?.deliverables)
             parsed.deliverables_i18n = fixed.deliverables;
+        if (fixed?.additionalDetails) {
+            if (!parsed.commission)
+                parsed.commission = {};
+            parsed.commission.additionalDetails_i18n = fixed.additionalDetails;
+        }
+    }
+    static briefMentionsAmount(brief, amount) {
+        if (!Number.isFinite(amount) || amount <= 0)
+            return false;
+        const normalized = Number.isInteger(amount) ? String(amount) : String(amount);
+        const body = normalized.replace(/[.]/g, '\\.');
+        return new RegExp(`(?<![\\d])${body}(?:[.,]0+)?(?![\\d])`).test(brief);
+    }
+    static briefPricesCalls(brief) {
+        return /(?:par appel|per call|\/\s*call|\/\s*appel|each call|chaque appel|à l['’]appel|a l['’]appel|prix .{0,20}appel|call price)/i.test(brief);
+    }
+    static briefPricesOutcome(brief) {
+        return /(?:par (?:représentant|representant|vente|transaction|contrat|signature|abonnement|onboarding)|per (?:rep|representative|sale|transaction|contract|subscription|onboarding)|onboard)/i.test(brief);
+    }
+    /**
+     * Keep only amounts written in the brief. A missing call, transaction or bonus
+     * price stays 0. Never fill the gap with 2, 25 or 100.
+     */
+    static sanitizeCommissionAmounts(parsed, brief, uiLanguage) {
+        if (!parsed.commission)
+            parsed.commission = {};
+        const commission = parsed.commission;
+        const toNumber = (val) => typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
+        let perCall = toNumber(commission.commission_per_call ?? commission.commissionPerCall);
+        let perTransaction = toNumber(commission.transactionCommission);
+        let bonus = toNumber(commission.bonusAmount);
+        if (!this.briefMentionsAmount(brief, perCall))
+            perCall = 0;
+        if (!this.briefMentionsAmount(brief, perTransaction))
+            perTransaction = 0;
+        if (!this.briefMentionsAmount(brief, bonus))
+            bonus = 0;
+        const callsPriced = this.briefPricesCalls(brief);
+        const outcomePriced = this.briefPricesOutcome(brief);
+        if (!callsPriced && perCall > 0 && (perTransaction === 0 || perTransaction === perCall) && (outcomePriced || perTransaction === 0)) {
+            perTransaction = perCall;
+            perCall = 0;
+        }
+        else if (!callsPriced && perCall > 0) {
+            perCall = 0;
+        }
+        commission.commission_per_call = perCall;
+        commission.transactionCommission = perTransaction;
+        commission.bonusAmount = bonus;
+        delete commission.commissionPerCall;
+        if (commission.minimumVolume) {
+            const volume = toNumber(commission.minimumVolume.amount);
+            commission.minimumVolume.amount = this.briefMentionsAmount(brief, volume) ? String(volume) : '0';
+            commission.minimumVolume.unit = commission.minimumVolume.unit || 'Transactions';
+            commission.minimumVolume.period = commission.minimumVolume.period || 'Monthly';
+        }
+        const statedPay = perTransaction > 0 || bonus > 0 || /[$€£]|usd|eur|dollar|euro/i.test(brief);
+        if (!callsPriced && statedPay) {
+            const enNote = 'No per-call price was given. Add one, or leave it at 0.';
+            const frNote = "Aucun prix par appel n'a été indiqué. Ajoutez-le, ou laissez 0.";
+            const current = commission.additionalDetails_i18n || {};
+            const plain = String(commission.additionalDetails || '').trim();
+            let enText = String(current.en || '').trim();
+            let frText = String(current.fr || '').trim();
+            if (!enText && plain && !this.narrativeLooksFrench(plain))
+                enText = plain;
+            if (!frText && plain && this.narrativeLooksFrench(plain))
+                frText = plain;
+            if (!frText && plain && !this.narrativeLooksFrench(plain))
+                frText = plain;
+            const nextEn = /per-call price was given/i.test(enText) ? enText : `${enText} ${enNote}`.trim();
+            const nextFr = /prix par appel/i.test(frText) ? frText : `${frText} ${frNote}`.trim();
+            commission.additionalDetails_i18n = { en: nextEn, fr: nextFr };
+            commission.additionalDetails = uiLanguage === 'en' ? nextEn : nextFr;
+        }
     }
     /** Attach *_i18n fields and set plain title/description from preferred UI language. */
     static applyGigBilingualFields(parsed, preferred = 'fr') {
@@ -991,30 +1068,28 @@ RULES:
 - team.structure.roleId: MUST be one of the TEAM ROLES listed above. Analyze the description to determine appropriate roles and counts (e.g. if "needs a manager and 3 agents", return 1 Manager and 3 Agents).
 
 COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
-- "commission_per_call" = AMOUNT (number, in the selected currency) PAID TO THE AGENT FOR EACH SUCCESSFUL CALL THEY PERFORM.
-  • Extract a real number if mentioned (e.g. "5€ par appel" → 5). 
-  • DEFAULT = 2 if nothing is said.
-- "transactionCommission" = AMOUNT (number) PAID TO THE AGENT FOR EACH CLOSED/COMPLETED TRANSACTION (e.g. a sale, a signed contract). Different from commission_per_call.
-  • Extract real number if mentioned (e.g. "50€ par vente" → 50).
-  • DEFAULT = 25 if nothing is said.
-- "bonusAmount" = BONUS AMOUNT (number) PAID WHEN THE AGENT REACHES A MINIMUM VOLUME OF CALLS over a period.
-  • Extract real number if mentioned (e.g. "bonus de 200€" → 200).
-  • DEFAULT = 100 if nothing is said.
-- "minimumVolume" describes THE NUMBER OF CALLS REQUIRED TO TRIGGER THE BONUS, OVER A PERIOD.
-  • "amount" = number of calls to reach (as a string). Extract from text (e.g. "100 calls/month" → "100"). DEFAULT = "50".
-  • "period" = "Daily" | "Weekly" | "Monthly". Detect from context. DEFAULT = "Monthly".
-  • "unit" = "Calls" | "Transactions". Choose what's mentioned. DEFAULT = "Calls".
-- "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }. DEFAULT = EUR ObjectId.
-- "additionalDetails" = short paragraph (2-3 sentences) summarising payment frequency (weekly/monthly), how the bonus triggers, and any special clauses (UI language). Also fill additionalDetails_i18n {en,fr}.
+- Use ONLY numbers written in the user brief. If a price is missing, set that field to 0. NEVER invent 2, 25, 100 or any other amount.
+- "commission_per_call" = amount paid for each call. Set it ONLY when the brief explicitly prices a call ("par appel", "per call"). Otherwise 0.
+- "transactionCommission" = amount paid per completed outcome (sale, signed contract, onboarded representative, subscription). A price "per representative onboarded" is a transaction, not a call.
+- "bonusAmount" = bonus paid when a volume threshold is reached. 0 if the brief has no bonus.
+- "minimumVolume.amount" = the threshold written in the brief. "0" if none is written. Do not invent 50.
+- "minimumVolume.period" = "Daily" | "Weekly" | "Monthly" from the brief, otherwise "Monthly".
+- "minimumVolume.unit" = "Calls" only if the threshold counts calls. Otherwise "Transactions".
+- "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }.
+- "additionalDetails" restates ONLY the payment terms that are in the brief, in the UI language. Also fill additionalDetails_i18n {en, fr} with real English and real French. If the call price is missing, say so and ask to add it or leave 0. Never write a number that is not in the brief.
 
 EXAMPLES:
 - "Pay 5€ per call + 50€ per sale, bonus 200€ if 100 calls per month" →
   commission_per_call: 5, transactionCommission: 50, bonusAmount: 200,
   minimumVolume: { amount: "100", period: "Monthly", unit: "Calls" }
-- "10$ per call, 5 calls per day bonus 30$" →
-  commission_per_call: 10, transactionCommission: 25 (default), bonusAmount: 30,
+- "3$ per onboarded representative, bonus 100$ if more than 100 representatives per month" →
+  commission_per_call: 0, transactionCommission: 3, bonusAmount: 100,
+  minimumVolume: { amount: "100", period: "Monthly", unit: "Transactions" }
+  additionalDetails must NOT invent a call price. Say the call price was not given.
+- "10$ per call, bonus 30$ after 5 calls per day" →
+  commission_per_call: 10, transactionCommission: 0, bonusAmount: 30,
   minimumVolume: { amount: "5", period: "Daily", unit: "Calls" }
-- Nothing specified about commission → use ALL defaults above.
+- Nothing specified about commission → commission_per_call: 0, transactionCommission: 0, bonusAmount: 0. Do not invent amounts.
 
 JSON format:
 {
@@ -1074,14 +1149,14 @@ JSON format:
     }
   },
     "commission": {
-    "commission_per_call": 2,
-    "transactionCommission": 25,
-    "bonusAmount": 100,
+    "commission_per_call": 0,
+    "transactionCommission": 0,
+    "bonusAmount": 0,
     "currency": {
       "$oid": "MONGODB_OBJECTID_FROM_CURRENCIES_LIST"
     },
     "minimumVolume": {
-      "amount": "50",
+      "amount": "0",
       "period": "Monthly",
       "unit": "Calls"
     },
@@ -1232,37 +1307,9 @@ JSON format:
                             : "eur-id-placeholder";
                         parsedResponse.commission.currency = { $oid: defaultCurrencyId };
                     }
-                    // 2. Strict type enforcement + defaults for commission fields
-                    // Defaults (used only when AI returned 0/null/missing):
-                    //   commission_per_call: 2   (per successful call)
-                    //   transactionCommission: 25 (per closed transaction)
-                    //   bonusAmount: 100         (bonus when minimumVolume reached)
-                    //   minimumVolume: 50 transactions /Monthly
-                    const toNumber = (val) => typeof val === 'string' ? (parseFloat(val) || 0) : (typeof val === 'number' ? val : 0);
-                    const parsedPerCall = toNumber(parsedResponse.commission.commission_per_call ?? parsedResponse.commission.commissionPerCall);
-                    parsedResponse.commission.commission_per_call = parsedPerCall > 0 ? parsedPerCall : 2;
-                    delete parsedResponse.commission.commissionPerCall;
-                    const parsedTransComm = toNumber(parsedResponse.commission.transactionCommission);
-                    parsedResponse.commission.transactionCommission = parsedTransComm > 0 ? parsedTransComm : 25;
-                    const parsedBonus = toNumber(parsedResponse.commission.bonusAmount);
-                    parsedResponse.commission.bonusAmount = parsedBonus > 0 ? parsedBonus : 100;
-                    // minimumVolume — with defaults
-                    if (parsedResponse.commission.minimumVolume) {
-                        const amtRaw = parsedResponse.commission.minimumVolume.amount;
-                        const amtNum = toNumber(amtRaw);
-                        parsedResponse.commission.minimumVolume.amount = amtNum > 0 ? String(amtNum) : "50";
-                        parsedResponse.commission.minimumVolume.unit = parsedResponse.commission.minimumVolume.unit || "Calls";
-                        parsedResponse.commission.minimumVolume.period = parsedResponse.commission.minimumVolume.period || "Monthly";
-                    }
-                    else {
-                        parsedResponse.commission.minimumVolume = {
-                            amount: "50",
-                            period: "Monthly",
-                            unit: "Calls"
-                        };
-                    }
-                    // additionalDetails must be string
-                    parsedResponse.commission.additionalDetails = parsedResponse.commission.additionalDetails || "";
+                    // Keep only amounts present in the brief. Missing prices stay 0.
+                    this.sanitizeCommissionAmounts(parsedResponse, description, uiLanguage);
+                    parsedResponse.commission.additionalDetails = String(parsedResponse.commission.additionalDetails || '');
                 }
                 // Convertir les timezones en IDs avec contexte intelligent
                 const timezoneContext = `${parsedResponse.title || ''} ${parsedResponse.description || ''} ${description}`;
