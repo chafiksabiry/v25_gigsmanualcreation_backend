@@ -13,6 +13,10 @@ export interface IGig extends Document {
   userId: mongoose.Types.ObjectId;
   companyId: mongoose.Types.ObjectId;
   destination_zone: mongoose.Types.ObjectId;
+  /** ENT-13: per-gig retraction delay (days), proposed from the destination
+   * country's default at creation time and editable by the company before
+   * publishing. Overrides the country default at sale time once set. */
+  retractionDays?: number | null;
   sectors: mongoose.Types.ObjectId[];
   activities: mongoose.Types.ObjectId[];
   industries: mongoose.Types.ObjectId[];
@@ -156,6 +160,7 @@ export const GigSchema = new Schema<IGig>(
       ref: 'Country',
       required: false
     },
+    retractionDays: { type: Number, default: null, min: 0 },
     sectors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Sector', required: false }],
     activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity', required: false }],
     industries: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Industry', required: false }],
