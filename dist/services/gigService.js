@@ -153,7 +153,9 @@ class GigService {
             await newGig.save();
             // Update onboarding progress (Step 3: Create a Gig)
             try {
-                const onboardingUrl = `https://v25searchcompanywizardbackend-production.up.railway.app/api/onboarding/phases/2/steps/3/complete?companyId=${newGig.companyId}`;
+                const searchCompanyWizardBaseUrl = (process.env.SEARCHCOMPANYWIZARD_API_URL ||
+                    'https://v25searchcompanywizardbackend-production.up.railway.app').replace(/\/$/, '');
+                const onboardingUrl = `${searchCompanyWizardBaseUrl}/api/onboarding/phases/2/steps/3/complete?companyId=${newGig.companyId}`;
                 console.log(`[GigService] Calling onboarding API: ${onboardingUrl}`);
                 const response = await axios_1.default.put(onboardingUrl);
                 console.log(`[GigService] Onboarding update response status:`, response.status);
