@@ -2,8 +2,8 @@
  * HARX prepaid AI tokens — normalize provider usage + charge orchestrator wallet.
  * Providers: Anthropic (Claude), OpenAI, Gemini/Vertex. Fallback: ~4 chars ≈ 1 token.
  *
- * Product rule: the company's **first gig package** (0 or 1 gig) AI is free
- * (no balance check, no charge) — included in the subscription.
+ * Product rule: the company's **very first gig** AI is free (no balance
+ * check, no charge) — included in the subscription.
  * From the 2nd gig onward, prepaid AI tokens are required.
  */
 
@@ -110,7 +110,7 @@ function getOrchestratorApiBase(): string {
   return String(raw).replace(/\/$/, '');
 }
 
-/** True while the company is still on its first gig package (0 or 1 gig). */
+/** True only for the company's very first gig (ENT-06: the 2nd AI generation must be billed/refused like any other). */
 export async function isFirstGigForCompany(
   companyId: string | undefined | null
 ): Promise<boolean> {
@@ -118,7 +118,7 @@ export async function isFirstGigForCompany(
   if (!id) return true;
   try {
     const count = await Gig.countDocuments({ companyId: id });
-    return count <= 1;
+    return count === 0;
   } catch (err) {
     console.warn('[aiTokenBilling] first-gig count failed (treating as first):', err);
     return true;
