@@ -177,11 +177,12 @@ export class GigController {
       if (wantsActive) {
         const existingGig = await GigService.getGigById(id);
         if (existingGig) {
+          // knowledgeBase is optional — a gig can be activated without one
+          // (see cahier de recette ENT-08).
           const REQUIRED_SETUP_KEYS = [
             'telephony',
             'uploadContacts',
             'callScript',
-            'knowledgeBase',
             'repOnboarding',
             'sessionPlanning',
           ] as const;
