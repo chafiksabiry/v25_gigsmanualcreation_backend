@@ -97,14 +97,12 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors(corsOptions));
 
 // Connexion à MongoDB
-// MONGODB_URI is the shared connection string every other backend service
-// (matching, comporchestrator, registration, ...) uses. This service used
-// to read only MONGO_URI, which pointed at a separate, isolated database —
-// gigs created here were invisible to matching/dashboard/etc. downstream.
-const mongoUri =
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
+// REVERT NOTE: this service's real data (companies, gigs, ...) lives in the
+// database MONGO_URI points to, NOT MONGODB_URI's database — preferring
+// MONGODB_URI (tried in a previous commit) silently moved this service onto
+// an empty/different database and made all existing gigs disappear. Keep
+// MONGO_URI as the primary connection string.
+const mongoUri = process.env.MONGO_URI || 'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
 
 mongoose.connect(mongoUri)
   .then(() => {
