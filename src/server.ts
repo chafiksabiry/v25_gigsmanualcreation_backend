@@ -97,12 +97,18 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors(corsOptions));
 
 // Connexion à MongoDB
-// REVERT NOTE: this service's real data (companies, gigs, ...) lives in the
-// database MONGO_URI points to, NOT MONGODB_URI's database — preferring
-// MONGODB_URI (tried in a previous commit) silently moved this service onto
-// an empty/different database and made all existing gigs disappear. Keep
-// MONGO_URI as the primary connection string.
-const mongoUri = process.env.MONGO_URI || 'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
+// In recette, MONGO_URI and MONGODB_URI point to two different databases
+// ("harx" vs "harx_recette") — a drift that doesn't exist in production,
+// where both resolve to the same database. MONGODB_URI/"harx_recette" is the
+// one every other recette service (matching, registration, comporchestrator,
+// ...) actually reads from, so REP matching never saw gigs created here while
+// this pointed at "harx". Switching to MONGODB_URI matches production's
+// behavior. Gigs already created under the old "harx" database stay there,
+// unreachable from here, but not deleted.
+const mongoUri =
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  'mongodb://harx:gcZ62rl8hoME@38.242.208.242:27018/V25_CompanySearchWizard';
 
 mongoose.connect(mongoUri)
   .then(() => {
