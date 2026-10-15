@@ -109,6 +109,7 @@ const mongoUri =
 mongoose.connect(mongoUri)
   .then(() => {
     console.log('Connected to MongoDB');
+    console.log('[db-diag] database name:', mongoose.connection.db?.databaseName, 'host:', mongoose.connection.host);
   })
   .catch((error) => {
     console.error('Error connecting to MongoDB:', error);
