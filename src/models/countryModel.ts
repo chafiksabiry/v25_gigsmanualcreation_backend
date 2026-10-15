@@ -17,6 +17,8 @@ export interface ICountry extends Document {
     svg?: string;
     alt?: string;
   };
+  /** Admin-settable legal retraction delay (days) for this country — see v25_registration_backend's adminCountriesService. */
+  retractionDays?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,7 +49,8 @@ export const CountrySchema = new Schema<ICountry>(
       png: { type: String, required: false },
       svg: { type: String, required: false },
       alt: { type: String, required: false }
-    }
+    },
+    retractionDays: { type: Number, default: null, min: 0 }
   },
   { timestamps: true }
 );

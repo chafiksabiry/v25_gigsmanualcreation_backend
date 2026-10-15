@@ -8,6 +8,7 @@ import axios from 'axios';
 import { Sector } from '../models/sectorModel';
 import { Activity } from '../models/activityModel';
 import { Industry } from '../models/industryModel';
+import { Country } from '../models/countryModel';
 import '../models/sectorModel';
 import '../models/activityModel';
 import '../models/industryModel';
@@ -163,6 +164,21 @@ export class GigService {
     try {
       await GigService.resolveLanguages(gigData);
       await GigService.resolveTaxonomyRefs(gigData);
+
+      // ENT-13: propose a retraction delay specific to the gig's
+      // destination country at creation time (the company can still edit
+      // it before publishing) — locked onto the gig itself from here on,
+      // rather than re-derived from the country's current admin setting
+      // every time a sale on this gig is validated.
+      if (gigData.retractionDays == null && gigData.destination_zone) {
+        try {
+          const country = await Country.findById(gigData.destination_zone).select('retractionDays').lean();
+          gigData.retractionDays = typeof country?.retractionDays === 'number' ? country.retractionDays : 14;
+        } catch (countryErr) {
+          console.warn('[gigService] retraction-days proposal skipped:', (countryErr as Error).message);
+        }
+      }
+
       const newGig = new Gig(gigData);
       await newGig.save();
 
@@ -292,6 +308,19 @@ export class GigService {
     try {
       await GigService.resolveLanguages(updateData);
       await GigService.resolveTaxonomyRefs(updateData);
+
+      // ENT-13: propose a retraction delay when the destination country is
+      // being set/changed and the caller didn't also set retractionDays
+      // explicitly in the same request.
+      if (updateData.retractionDays == null && updateData.destination_zone) {
+        try {
+          const country = await Country.findById(updateData.destination_zone).select('retractionDays').lean();
+          updateData.retractionDays = typeof country?.retractionDays === 'number' ? country.retractionDays : 14;
+        } catch (countryErr) {
+          console.warn('[gigService] retraction-days proposal skipped:', (countryErr as Error).message);
+        }
+      }
+
       console.log('🔍 SERVICE - updateGig called with ID:', id);
       console.log('🔍 SERVICE - updateData:', JSON.stringify(updateData, null, 2));
       
