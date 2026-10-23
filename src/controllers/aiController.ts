@@ -295,6 +295,20 @@ export class AIController {
         });
       }
 
+      // A one-word brief ("test") used to produce a fully invented gig and cost tokens.
+      const briefText = String(description).trim();
+      const briefWords = briefText.split(/\s+/).filter(Boolean).length;
+      if (briefText.length < 25 || briefWords < 5) {
+        return res.status(400).json({
+          success: false,
+          error: 'brief_too_short',
+          message:
+            uiLanguage === 'en'
+              ? 'Your description is too short to build a gig. Add the role, the market, the schedule and the pay (at least one full sentence).'
+              : "Votre description est trop courte pour créer un gig. Indiquez le poste, le marché, les horaires et la rémunération (au moins une phrase complète).",
+        });
+      }
+
       const billingCompanyId = String(companyId || '').trim() || undefined;
       const tokenGate = await assertCompanyHasAiTokens(billingCompanyId, 1);
       if (!tokenGate.ok) {
