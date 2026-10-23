@@ -1145,7 +1145,38 @@ export class AIService {
   }
 
   private static briefPricesOutcome(brief: string): boolean {
-    return /(?:par (?:représentant|representant|vente|transaction|contrat|signature|abonnement|onboarding)|per (?:rep|representative|sale|transaction|contract|subscription|onboarding)|onboard)/i.test(brief);
+    return /(?:par (?:représentant|representant|vente|transaction|contrat|signature|abonnement|onboarding|rendez-vous|rdv|lead|prospect|devis|démo|demo)|per (?:rep|representative|sale|transaction|contract|subscription|onboarding|appointment|meeting|lead|demo|quote)|onboard)/i.test(brief);
+  }
+
+  /**
+   * Price written "per outcome" in the brief ("12 € par rendez-vous qualifié",
+   * "€12 per qualified lead"). Returns 0 when none is written.
+   */
+  private static extractOutcomePrice(brief: string): number {
+    const outcome = '(?:représentant|representant|vente|transaction|contrat|signature|abonnement|onboarding|rendez-vous|rdv|lead|prospect|devis|démo|demo|rep|representative|sale|contract|subscription|appointment|meeting|quote)';
+    const patterns = [
+      new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(?:€|\\$|£|eur(?:os?)?|usd|dollars?)\\s*(?:par|per|\\/)\\s*(?:(?:qualified|qualifi[ée]e?|signed|sign[ée]e?|confirmed|confirm[ée]e?|valid(?:ated|[ée]e?)?)\\s+)?${outcome}`, 'i'),
+      new RegExp(`(?:€|\\$|£)\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:par|per|\\/)\\s*(?:(?:qualified|qualifi[ée]e?|signed|sign[ée]e?|confirmed|confirm[ée]e?|valid(?:ated|[ée]e?)?)\\s+)?${outcome}`, 'i'),
+    ];
+    for (const re of patterns) {
+      const m = brief.match(re);
+      if (m) return parseFloat(m[1].replace(',', '.')) || 0;
+    }
+    return 0;
+  }
+
+  /**
+   * Unit of the bonus threshold, read from the words that follow the number:
+   * "20 appels" counts calls, "20 rendez-vous" / "20 ventes" count transactions.
+   */
+  private static inferVolumeUnit(brief: string, amount: number): 'Calls' | 'Transactions' | null {
+    if (!amount) return null;
+    const after = brief.match(new RegExp(`(?<![\\d])${amount}(?:[.,]0+)?\\s+([\\p{L}-]+)`, 'iu'));
+    const word = after?.[1]?.toLowerCase();
+    if (!word) return null;
+    if (/^(appels?|calls?)$/.test(word)) return 'Calls';
+    if (/^(rendez-vous|rdv|ventes?|sales?|leads?|prospects?|contrats?|contracts?|transactions?|abonnements?|subscriptions?|appointments?|meetings?|d[ée]mos?|devis|quotes?|repr[ée]sentants?|reps?)$/.test(word)) return 'Transactions';
+    return null;
   }
 
   /**
@@ -1175,6 +1206,12 @@ export class AIService {
       perCall = 0;
     }
 
+    // The brief prices an outcome ("12 € par rendez-vous") but the model left it at 0.
+    if (perTransaction === 0) {
+      const outcomePrice = this.extractOutcomePrice(brief);
+      if (outcomePrice > 0 && outcomePrice !== bonus) perTransaction = outcomePrice;
+    }
+
     commission.commission_per_call = perCall;
     commission.transactionCommission = perTransaction;
     commission.bonusAmount = bonus;
@@ -1183,7 +1220,8 @@ export class AIService {
     if (commission.minimumVolume) {
       const volume = toNumber(commission.minimumVolume.amount);
       commission.minimumVolume.amount = this.briefMentionsAmount(brief, volume) ? String(volume) : '0';
-      commission.minimumVolume.unit = commission.minimumVolume.unit || 'Transactions';
+      commission.minimumVolume.unit =
+        this.inferVolumeUnit(brief, volume) || commission.minimumVolume.unit || 'Transactions';
       commission.minimumVolume.period = commission.minimumVolume.period || 'Monthly';
     }
 
@@ -1410,11 +1448,11 @@ RULES:
 COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
 - Use ONLY numbers written in the user brief. If a price is missing, set that field to 0. NEVER invent 2, 25, 100 or any other amount.
 - "commission_per_call" = amount paid for each call. Set it ONLY when the brief explicitly prices a call ("par appel", "per call"). Otherwise 0.
-- "transactionCommission" = amount paid per completed outcome (sale, signed contract, onboarded representative, subscription). A price "per representative onboarded" is a transaction, not a call.
+- "transactionCommission" = amount paid per completed outcome (sale, signed contract, onboarded representative, subscription, qualified appointment or lead). A price "per representative onboarded" or "per qualified appointment" ("par rendez-vous qualifié") is a transaction, not a call.
 - "bonusAmount" = bonus paid when a volume threshold is reached. 0 if the brief has no bonus.
 - "minimumVolume.amount" = the threshold written in the brief. "0" if none is written. Do not invent 50.
 - "minimumVolume.period" = "Daily" | "Weekly" | "Monthly" from the brief, otherwise "Monthly".
-- "minimumVolume.unit" = "Calls" only if the threshold counts calls. Otherwise "Transactions".
+- "minimumVolume.unit" = "Calls" only if the threshold counts calls ("20 appels"). If it counts appointments, leads or sales ("20 rendez-vous", "20 ventes"), use "Transactions".
 - "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }.
 - "additionalDetails" restates ONLY the payment terms that are in the brief, in the destination language. Fill only that side of additionalDetails_i18n. If the call price is missing, say so and ask to add it or leave 0. Never write a number that is not in the brief.
 
@@ -1426,6 +1464,9 @@ EXAMPLES:
   commission_per_call: 0, transactionCommission: 3, bonusAmount: 100,
   minimumVolume: { amount: "100", period: "Monthly", unit: "Transactions" }
   additionalDetails must NOT invent a call price. Say the call price was not given.
+- "12 € par rendez-vous qualifié, bonus de 150 € au-delà de 20 rendez-vous par mois" →
+  commission_per_call: 0, transactionCommission: 12, bonusAmount: 150,
+  minimumVolume: { amount: "20", period: "Monthly", unit: "Transactions" }
 - "10$ per call, bonus 30$ after 5 calls per day" →
   commission_per_call: 10, transactionCommission: 0, bonusAmount: 30,
   minimumVolume: { amount: "5", period: "Daily", unit: "Calls" }
