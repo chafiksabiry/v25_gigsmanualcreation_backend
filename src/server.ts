@@ -8,6 +8,7 @@ import aiRoutes from './route/aiRoute';
 import countryRoutes from './route/countryRoute';
 import currencyRoutes from './route/currencyRoute';
 import sectorRoutes from './route/sectorRoute';
+import { seedDefaultSectors } from './seeds/defaultSectors';
 import bulkRoutes from './route/bulkRoute';
 
 dotenv.config();  // Pour charger les variables d'environnement depuis un fichier .env
@@ -114,6 +115,9 @@ mongoose.connect(mongoUri)
   .then(() => {
     console.log('Connected to MongoDB');
     console.log('[db-diag] database name:', mongoose.connection.db?.databaseName, 'host:', mongoose.connection.host);
+    return seedDefaultSectors()
+      .then((n) => { if (n > 0) console.log(`[seed] ${n} default sector(s) created`); })
+      .catch((e) => console.error('[seed] default sectors failed:', e));
   })
   .catch((error) => {
     console.error('Error connecting to MongoDB:', error);
