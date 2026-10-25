@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AIService = void 0;
+exports.AIService = exports.LLMError = void 0;
 const openai_1 = __importDefault(require("openai"));
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 // Configuration sécurisée d'OpenAI côté backend - initialisation conditionnelle
@@ -87,6 +87,16 @@ function isAnthropicModelNotFound(err) {
     const msg = String(e?.message || e?.error?.message || '').toLowerCase();
     return status === 404 || msg.includes('not_found') || msg.includes('model:');
 }
+class LLMError extends Error {
+    constructor(message, code, httpStatus, originalError) {
+        super(message);
+        this.code = code;
+        this.httpStatus = httpStatus;
+        this.originalError = originalError;
+        this.name = 'LLMError';
+    }
+}
+exports.LLMError = LLMError;
 /** Detect transient/failure errors where fallback to Claude makes sense */
 function shouldFallbackToClaude(err) {
     if (!err)
@@ -95,6 +105,9 @@ function shouldFallbackToClaude(err) {
     const status = e?.status || e?.response?.status;
     const code = e?.code || e?.error?.code;
     const message = String(e?.message || e?.error?.message || '').toLowerCase();
+    // 401 invalid_api_key → key revoked, try Claude before giving up
+    if (status === 401 || code === 'invalid_api_key')
+        return true;
     if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504)
         return true;
     if (status === 400) {
@@ -118,6 +131,26 @@ function shouldFallbackToClaude(err) {
         message.includes('socket hang up'))
         return true;
     return false;
+}
+/** Convert a raw provider error into a typed LLMError */
+function classifyProviderError(err, provider) {
+    const e = err;
+    const status = e?.status || e?.response?.status;
+    const code = e?.code || e?.error?.code;
+    const message = String(e?.message || e?.error?.message || '');
+    if (status === 401 || code === 'invalid_api_key') {
+        return new LLMError(`Clé API ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} invalide ou révoquée. Veuillez contacter le support HARX.`, 'invalid_api_key', 503, err);
+    }
+    if (status === 429 || code === 'rate_limit_exceeded') {
+        return new LLMError(`Le service IA est temporairement surchargé. Réessayez dans quelques instants.`, 'rate_limit', 503, err);
+    }
+    if (code === 'insufficient_quota') {
+        return new LLMError(`Quota IA épuisé. Veuillez contacter le support HARX.`, 'insufficient_quota', 503, err);
+    }
+    if (status && status >= 500) {
+        return new LLMError(`Le service IA est temporairement indisponible. Réessayez dans quelques instants.`, 'ai_unavailable', 503, err);
+    }
+    return new LLMError(message || `Erreur inconnue du service IA (${provider}).`, 'unknown', 500, err);
 }
 /**
  * Single entry point for OpenAI calls with automatic Anthropic Claude fallback
@@ -162,13 +195,15 @@ async function callLLMWithFallback(opts) {
     }
     catch (openaiError) {
         const fallback = shouldFallbackToClaude(openaiError);
-        console.error(`❌ Erreur OpenAI (fallback Claude = ${fallback}):`, openaiError?.message || openaiError);
+        const oaiCode = openaiError?.code || openaiError?.error?.code || '';
+        const oaiStatus = openaiError?.status || openaiError?.response?.status || 0;
+        console.error(`❌ Erreur OpenAI [${oaiStatus}/${oaiCode}] (fallback Claude = ${fallback}):`, openaiError?.message || openaiError);
         if (!fallback)
-            throw openaiError;
+            throw classifyProviderError(openaiError, 'openai');
         const claude = getAnthropicClient();
         if (!claude) {
             console.error('⚠️ ANTHROPIC_API_KEY non configurée — impossible de basculer vers Claude');
-            throw openaiError;
+            throw classifyProviderError(openaiError, 'openai');
         }
         const claudeSystem = forceJson
             ? `${systemPrompt}\n\nIMPORTANT: Respond with VALID JSON ONLY, no markdown, no commentary.`
@@ -212,20 +247,32 @@ async function callLLMWithFallback(opts) {
             }
         }
         console.error('❌ Tous les modèles Claude ont échoué:', lastClaudeError?.message || lastClaudeError);
-        throw lastClaudeError;
+        throw new LLMError('Le service IA est temporairement indisponible (OpenAI + Claude). Réessayez dans quelques instants.', 'all_providers_failed', 503, lastClaudeError);
     }
 }
 // Rate limiting configuration
 const RETRY_DELAY = 1000;
 const MAX_RETRIES = 3;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+/** Codes that are never worth retrying (result won't change) */
+const FATAL_ERROR_CODES = new Set(['invalid_api_key', 'insufficient_quota', 'all_providers_failed']);
 async function retryWithBackoff(fn, retries = MAX_RETRIES) {
     try {
         return await fn();
     }
     catch (error) {
-        if (error?.error?.code === 'rate_limit_exceeded' && retries > 0) {
+        // LLMError already classified — re-throw immediately if fatal
+        if (error instanceof LLMError && FATAL_ERROR_CODES.has(error.code))
+            throw error;
+        const code = error?.code || error?.error?.code;
+        const status = error?.status || error?.response?.status;
+        // Auth errors → no retry
+        if (status === 401 || code === 'invalid_api_key')
+            throw error;
+        // Rate limit → retry with backoff
+        if ((code === 'rate_limit_exceeded' || status === 429) && retries > 0) {
             const delay = RETRY_DELAY * (MAX_RETRIES - retries + 1);
+            console.warn(`⏳ Rate limit — retry dans ${delay}ms (${retries} essais restants)`);
             await sleep(delay);
             return retryWithBackoff(fn, retries - 1);
         }
@@ -702,6 +749,102 @@ class AIService {
     /**
      * Génère des suggestions de gig basées sur une description
      */
+    /** Language of the gig destination country. One language, not the UI language. */
+    static gigContentLanguage(country, fallback) {
+        const frenchCodes = new Set([
+            'FR', 'BE', 'CH', 'LU', 'MC', 'SN', 'CI', 'CM', 'MA', 'TN', 'DZ', 'MG',
+            'HT', 'GP', 'MQ', 'RE', 'GF', 'YT', 'PF', 'NC', 'CD', 'CG', 'GA', 'ML',
+            'NE', 'BF', 'BJ', 'TG', 'TD', 'GN', 'RW', 'BI', 'DJ', 'KM',
+        ]);
+        if (!country)
+            return fallback;
+        const code = String(country.cca2 || '').toUpperCase();
+        if (code.length === 2)
+            return frenchCodes.has(code) ? 'fr' : 'en';
+        const langs = country.languages;
+        if (langs && typeof langs === 'object' && !Array.isArray(langs)) {
+            const keys = Object.keys(langs).map((key) => key.toLowerCase());
+            if (keys.some((key) => key === 'fra' || key === 'fre' || key === 'fr'))
+                return 'fr';
+            if (keys.some((key) => key === 'eng' || key === 'en'))
+                return 'en';
+        }
+        const name = String(country.name?.common || country.name?.official || country.name || '').toLowerCase();
+        if (/france|belgium|belgique|switzerland|suisse|luxembourg|monaco|morocco|maroc|tunis|alger|senegal/.test(name)) {
+            return 'fr';
+        }
+        return name ? 'en' : fallback;
+    }
+    static listSide(bundle, side) {
+        if (bundle && typeof bundle === 'object' && !Array.isArray(bundle)) {
+            const value = bundle[side];
+            if (Array.isArray(value))
+                return value.map((item) => String(item).trim()).filter(Boolean);
+        }
+        return [];
+    }
+    /** Keep narrative copy in the gig language and leave the other language empty. */
+    static applyGigSingleLanguage(parsed, lang) {
+        const other = lang === 'fr' ? 'en' : 'fr';
+        const plainTitles = Array.isArray(parsed.jobTitles)
+            ? parsed.jobTitles.map((item) => String(item).trim()).filter(Boolean)
+            : [];
+        const jobTitles = this.listSide(parsed.jobTitles_i18n, lang).length
+            ? this.listSide(parsed.jobTitles_i18n, lang)
+            : plainTitles.length
+                ? plainTitles
+                : this.listSide(parsed.jobTitles_i18n, other);
+        parsed.jobTitles = jobTitles;
+        parsed.jobTitles_i18n = {
+            en: lang === 'en' ? jobTitles : [],
+            fr: lang === 'fr' ? jobTitles : [],
+        };
+        parsed.title = jobTitles[0] || String(parsed.title || '').trim();
+        parsed.title_i18n = {
+            en: lang === 'en' ? parsed.title : '',
+            fr: lang === 'fr' ? parsed.title : '',
+        };
+        const description = this.pickGigText(parsed.jobDescription_i18n || parsed.description_i18n, parsed.jobDescription || parsed.description, lang);
+        parsed.jobDescription = description;
+        parsed.description = description;
+        const descriptionBundle = { en: lang === 'en' ? description : '', fr: lang === 'fr' ? description : '' };
+        parsed.jobDescription_i18n = descriptionBundle;
+        parsed.description_i18n = descriptionBundle;
+        const keepList = (bundle, plain) => {
+            const preferred = this.listSide(bundle, lang);
+            if (preferred.length)
+                return preferred;
+            const plainList = Array.isArray(plain)
+                ? plain.map((item) => String(item).trim()).filter(Boolean)
+                : [];
+            if (plainList.length)
+                return plainList;
+            return this.listSide(bundle, other);
+        };
+        const highlights = keepList(parsed.highlights_i18n, parsed.highlights);
+        const deliverables = keepList(parsed.deliverables_i18n, parsed.deliverables);
+        parsed.highlights = highlights;
+        parsed.deliverables = deliverables;
+        parsed.highlights_i18n = { en: lang === 'en' ? highlights : [], fr: lang === 'fr' ? highlights : [] };
+        parsed.deliverables_i18n = { en: lang === 'en' ? deliverables : [], fr: lang === 'fr' ? deliverables : [] };
+        if (parsed.commission) {
+            const details = this.pickGigText(parsed.commission.additionalDetails_i18n, parsed.commission.additionalDetails, lang);
+            parsed.commission.additionalDetails = details;
+            parsed.commission.additionalDetails_i18n = {
+                en: lang === 'en' ? details : '',
+                fr: lang === 'fr' ? details : '',
+            };
+        }
+        return parsed;
+    }
+    static pickGigText(bundle, plain, lang) {
+        const preferred = this.narrativeSide(bundle, lang);
+        if (preferred)
+            return preferred;
+        if (typeof plain === 'string' && plain.trim())
+            return plain.trim();
+        return this.narrativeSide(bundle, lang === 'fr' ? 'en' : 'fr');
+    }
     /** Normalize AI bilingual text → {en,fr} (fills missing side from the other). */
     static asI18nText(raw, fallback = '') {
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -842,7 +985,7 @@ class AIService {
      * Keep only amounts written in the brief. A missing call, transaction or bonus
      * price stays 0. Never fill the gap with 2, 25 or 100.
      */
-    static sanitizeCommissionAmounts(parsed, brief, uiLanguage) {
+    static sanitizeCommissionAmounts(parsed, brief, lang) {
         if (!parsed.commission)
             parsed.commission = {};
         const commission = parsed.commission;
@@ -877,22 +1020,20 @@ class AIService {
         }
         const statedPay = perTransaction > 0 || bonus > 0 || /[$€£]|usd|eur|dollar|euro/i.test(brief);
         if (!callsPriced && statedPay) {
-            const enNote = 'No per-call price was given. Add one, or leave it at 0.';
-            const frNote = "Aucun prix par appel n'a été indiqué. Ajoutez-le, ou laissez 0.";
+            const note = lang === 'en'
+                ? 'No per-call price was given. Add one, or leave it at 0.'
+                : "Aucun prix par appel n'a été indiqué. Ajoutez-le, ou laissez 0.";
+            const marker = lang === 'en' ? /per-call price was given/i : /prix par appel/i;
             const current = commission.additionalDetails_i18n || {};
+            const fromBundle = String(current[lang] || '').trim();
             const plain = String(commission.additionalDetails || '').trim();
-            let enText = String(current.en || '').trim();
-            let frText = String(current.fr || '').trim();
-            if (!enText && plain && !this.narrativeLooksFrench(plain))
-                enText = plain;
-            if (!frText && plain && this.narrativeLooksFrench(plain))
-                frText = plain;
-            if (!frText && plain && !this.narrativeLooksFrench(plain))
-                frText = plain;
-            const nextEn = /per-call price was given/i.test(enText) ? enText : `${enText} ${enNote}`.trim();
-            const nextFr = /prix par appel/i.test(frText) ? frText : `${frText} ${frNote}`.trim();
-            commission.additionalDetails_i18n = { en: nextEn, fr: nextFr };
-            commission.additionalDetails = uiLanguage === 'en' ? nextEn : nextFr;
+            const base = fromBundle || plain;
+            const next = marker.test(base) ? base : `${base} ${note}`.trim();
+            commission.additionalDetails = next;
+            commission.additionalDetails_i18n = {
+                en: lang === 'en' ? next : '',
+                fr: lang === 'fr' ? next : '',
+            };
         }
     }
     /** Attach *_i18n fields and set plain title/description from preferred UI language. */
@@ -1007,10 +1148,12 @@ class AIService {
         const prompt = `Based on: "${description}"
 
 CRITICAL LANGUAGE RULE (read first):
-- ALWAYS generate bilingual French AND English for human-readable fields.
-- Provide BOTH:
-  • plain arrays/strings (jobTitles, jobDescription, highlights, deliverables, additionalDetails, flexibility) in the UI language: ${uiLanguage === 'fr' ? 'French' : 'English'}
-  • matching *_i18n objects with BOTH "en" and "fr" filled. "en" is English and "fr" is French. Never copy the same sentence into both languages.
+- Write every human-readable narrative field in ONE language: the language of the destination country you select.
+- French-speaking destination (France, Belgium, Switzerland, Luxembourg, Monaco, Morocco, Tunisia, Algeria, Senegal, and the other French-speaking countries in the list) → French.
+- Every other destination → English.
+- If the destination is unclear, use ${uiLanguage === 'fr' ? 'French' : 'English'}.
+- Do not write a second language. Do not translate.
+- Put that single language in the plain fields AND in the matching *_i18n side ("fr" or "en"). Leave the other *_i18n side empty.
 - Keep technical identifiers untouched: MongoDB ObjectIds, ISO codes, currency codes, IANA timezones, weekday names (Monday, Tuesday, ...), proficiency codes (A1..C2).
 
 IMPORTANT:
@@ -1055,7 +1198,7 @@ TEAM ROLES (choose the most appropriate ones from this list):
 ${TEAM_ROLES.join(', ')}
 
 RULES:
-- Bilingual FR + EN for all narrative fields (*_i18n required)
+- Narrative fields in the destination language only. One language. Leave the other *_i18n side empty.
 - Match country to context/language
 - Days: Monday, Tuesday, etc. (no "Other days")
 - SCHEDULE / TIME RANGES (plages): availability.schedule is a FLAT list of { day, hours: { start, end } }.
@@ -1076,7 +1219,7 @@ COMMISSION STRUCTURE — STRICT DEFINITIONS (read carefully):
 - "minimumVolume.period" = "Daily" | "Weekly" | "Monthly" from the brief, otherwise "Monthly".
 - "minimumVolume.unit" = "Calls" only if the threshold counts calls. Otherwise "Transactions".
 - "currency" MUST be a real MongoDB ObjectId from the CURRENCIES list, in the object form { "$oid": "..." }.
-- "additionalDetails" restates ONLY the payment terms that are in the brief, in the UI language. Also fill additionalDetails_i18n {en, fr} with real English and real French. If the call price is missing, say so and ask to add it or leave 0. Never write a number that is not in the brief.
+- "additionalDetails" restates ONLY the payment terms that are in the brief, in the destination language. Fill only that side of additionalDetails_i18n. If the call price is missing, say so and ask to add it or leave 0. Never write a number that is not in the brief.
 
 EXAMPLES:
 - "Pay 5€ per call + 50€ per sale, bonus 200€ if 100 calls per month" →
@@ -1183,7 +1326,7 @@ JSON format:
 }`;
         return retryWithBackoff(async () => {
             const llm = await callLLMWithFallback({
-                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Always produce bilingual French AND English for narrative fields (jobTitles_i18n, jobDescription_i18n, highlights_i18n, deliverables_i18n, additionalDetails_i18n). "en" must be English and "fr" must be French. Never copy one language into the other. Plain fields use the requested UI language. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
+                systemPrompt: 'You are a helpful assistant that creates comprehensive gig listings. CRITICAL LANGUAGE RULE: Write narrative fields in ONE language only, the language of the destination country (French-speaking country → French, otherwise English). Fill jobTitles, jobDescription, highlights, deliverables and additionalDetails in that language, and only the matching side of *_i18n. Leave the other language empty. Do not translate. Keep ObjectIds, enum codes (proficiency, ISO codes, currency codes, IANA timezones, weekday names) untouched. For availability.schedule, emit one {day,hours} object per time range (plage); the same weekday may appear multiple times when the brief implies split shifts. Return only valid JSON.',
                 userPrompt: prompt,
                 openaiModel: DEFAULT_OPENAI_MODEL,
                 temperature: 0.7,
@@ -1206,15 +1349,10 @@ JSON format:
             }
             try {
                 const parsed = this.parseOpenAIResponse(content);
-                try {
-                    await this.repairGigNarrativeLanguages(parsed);
-                }
-                catch (repairError) {
-                    console.warn('⚠️ Traduction bilingue des suggestions ignorée:', repairError);
-                }
-                const parsedResponse = this.applyGigBilingualFields(parsed, uiLanguage);
-                const rawDestinationZone = parsedResponse.destination_zone;
-                parsedResponse.destination_zone = this.normalizeDestinationZone(rawDestinationZone, countriesData, description);
+                const rawDestinationZone = parsed.destination_zone;
+                parsed.destination_zone = this.normalizeDestinationZone(rawDestinationZone, countriesData, description);
+                const gigLanguage = this.gigContentLanguage(this.getCountryById(countriesData, parsed.destination_zone), uiLanguage);
+                const parsedResponse = this.applyGigSingleLanguage(parsed, gigLanguage);
                 console.log(`🔍 destination_zone normalisé: ${parsedResponse.destination_zone || '(vide)'}`);
                 if (Array.isArray(rawDestinationZone)) {
                     console.log(`⚠️ OpenAI a renvoyé un tableau destination_zone — premier pays conservé`);
@@ -1308,7 +1446,7 @@ JSON format:
                         parsedResponse.commission.currency = { $oid: defaultCurrencyId };
                     }
                     // Keep only amounts present in the brief. Missing prices stay 0.
-                    this.sanitizeCommissionAmounts(parsedResponse, description, uiLanguage);
+                    this.sanitizeCommissionAmounts(parsedResponse, description, gigLanguage);
                     parsedResponse.commission.additionalDetails = String(parsedResponse.commission.additionalDetails || '');
                 }
                 // Convertir les timezones en IDs avec contexte intelligent

@@ -2,8 +2,82 @@ import { Request, Response } from 'express';
 import { Country } from '../models/countryModel';
 import { Currency } from '../models/currencyModel';
 import { Timezone } from '../models/timezoneModel';
-import { AIService } from '../services/aiService';
+import { AIService, LLMError } from '../services/aiService';
 import { PopulateService } from '../services/populateService';
+
+/**
+ * Transforme n'importe quelle erreur capturée dans un bloc catch en réponse HTTP
+ * structurée avec le bon status code et un message lisible pour le frontend.
+ */
+function sendErrorResponse(res: Response, error: unknown, context: string): void {
+  // Erreur IA typée (LLMError) → utilise son httpStatus + message
+  if (error instanceof LLMError) {
+    console.error(`[${context}] LLMError [${error.code}]:`, error.message);
+    res.status(error.httpStatus).json({
+      success: false,
+      error: error.code,
+      message: error.message,
+    });
+    return;
+  }
+
+  const e = error as any;
+  const status: number = e?.status || e?.response?.status || 0;
+  const code: string = e?.code || e?.error?.code || '';
+  const message: string = e?.message || e?.error?.message || 'Erreur inconnue';
+
+  // Auth error non wrappée
+  if (status === 401 || code === 'invalid_api_key') {
+    console.error(`[${context}] Clé API invalide:`, message);
+    res.status(503).json({
+      success: false,
+      error: 'invalid_api_key',
+      message: 'Le service IA est temporairement indisponible. Veuillez contacter le support HARX.',
+    });
+    return;
+  }
+
+  // Rate limit
+  if (status === 429 || code === 'rate_limit_exceeded') {
+    console.error(`[${context}] Rate limit:`, message);
+    res.status(503).json({
+      success: false,
+      error: 'rate_limit',
+      message: 'Le service IA est temporairement surchargé. Réessayez dans quelques instants.',
+    });
+    return;
+  }
+
+  // Quota
+  if (code === 'insufficient_quota') {
+    console.error(`[${context}] Quota épuisé:`, message);
+    res.status(503).json({
+      success: false,
+      error: 'insufficient_quota',
+      message: 'Quota IA épuisé. Veuillez contacter le support HARX.',
+    });
+    return;
+  }
+
+  // Server errors IA
+  if (status >= 500 && status < 600) {
+    console.error(`[${context}] Erreur serveur IA [${status}]:`, message);
+    res.status(503).json({
+      success: false,
+      error: 'ai_unavailable',
+      message: 'Le service IA est temporairement indisponible. Réessayez dans quelques instants.',
+    });
+    return;
+  }
+
+  // Erreur générique
+  console.error(`[${context}] Erreur inconnue:`, error);
+  res.status(500).json({
+    success: false,
+    error: 'internal_error',
+    message: 'Une erreur interne est survenue. Réessayez ou contactez le support.',
+  });
+}
 import {
   assertCompanyHasAiTokens,
   chargeCompanyAiTokens,
@@ -272,12 +346,8 @@ export class AIController {
           firstGigFree,
         },
       });
-    } catch (error: any) {
-      console.error('Error transcribing audio:', error);
-      return res.status(500).json({
-        error: 'Failed to transcribe audio',
-        message: error.message,
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'transcribeAudio');
     }
   }
 
@@ -386,12 +456,8 @@ export class AIController {
           firstGigFree,
         },
       });
-    } catch (error: any) {
-      console.error('Error generating gig suggestions:', error);
-      res.status(500).json({
-        error: 'Failed to generate gig suggestions',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'generateGigSuggestions');
     }
   }
 
@@ -422,12 +488,8 @@ export class AIController {
       );
 
       res.status(200).json(skills);
-    } catch (error: any) {
-      console.error('Error generating skills:', error);
-      res.status(500).json({
-        error: 'Failed to generate skills',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'generateSkills');
     }
   }
 
@@ -447,12 +509,8 @@ export class AIController {
       const timezoneResponse = await AIService.generateTimezones(request);
 
       res.status(200).json(timezoneResponse);
-    } catch (error: any) {
-      console.error('Error generating timezones:', error);
-      res.status(500).json({
-        error: 'Failed to generate timezone suggestions',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'generateTimezones');
     }
   }
 
@@ -472,12 +530,8 @@ export class AIController {
       const destinations = await AIService.generateDestinations(title, description || '', category || '');
 
       res.status(200).json(destinations);
-    } catch (error: any) {
-      console.error('Error generating destinations:', error);
-      res.status(500).json({
-        error: 'Failed to generate destination suggestions',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'generateDestinations');
     }
   }
 
@@ -571,12 +625,8 @@ export class AIController {
           firstGigFree,
         },
       });
-    } catch (error: any) {
-      console.error('Error analyzing title:', error);
-      res.status(500).json({
-        error: 'Failed to analyze title and generate description',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'analyzeTitleAndGenerateDescription');
     }
   }
 
@@ -720,12 +770,8 @@ export class AIController {
       };
 
       res.status(200).json(testResponse);
-    } catch (error: any) {
-      console.error('Error in test endpoint:', error);
-      res.status(500).json({
-        error: 'Failed to generate test suggestions',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'testGigSuggestions');
     }
   }
 
@@ -785,12 +831,8 @@ export class AIController {
       };
 
       res.status(200).json(result);
-    } catch (error: any) {
-      console.error('Error testing API connections:', error);
-      res.status(500).json({
-        error: 'Failed to connect to external APIs',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'testApiConnections');
     }
   }
 
@@ -845,12 +887,8 @@ export class AIController {
         original: sampleGigWithIds,
         populated: populatedData
       });
-    } catch (error: any) {
-      console.error('Error testing populate:', error);
-      res.status(500).json({
-        error: 'Failed to test populate functionality',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'testPopulateData');
     }
   }
 
@@ -874,12 +912,8 @@ export class AIController {
         data: categories,
         message: "Categories retrieved successfully"
       });
-    } catch (error: any) {
-      console.error('Error getting categories:', error);
-      res.status(500).json({
-        error: 'Failed to get categories',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'getCategories');
     }
   }
 
@@ -895,12 +929,8 @@ export class AIController {
         data: timezonesData,
         message: "Timezones retrieved successfully"
       });
-    } catch (error: any) {
-      console.error('Error getting timezones:', error);
-      res.status(500).json({
-        error: 'Failed to get timezones',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'getTimezones');
     }
   }
 
@@ -1002,12 +1032,8 @@ export class AIController {
         },
         availableActivities: activitiesData.map((a: any) => ({ id: a._id, name: a.name }))
       });
-    } catch (error: any) {
-      console.error('Error testing activity mapping:', error);
-      res.status(500).json({
-        error: 'Failed to test activity mapping',
-        message: error.message
-      });
+    } catch (error: unknown) {
+      sendErrorResponse(res, error, 'testActivityMapping');
     }
   }
 
