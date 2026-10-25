@@ -3,7 +3,8 @@
  * HARX prepaid AI tokens — normalize provider usage + charge orchestrator wallet.
  * Providers: Anthropic (Claude), OpenAI, Gemini/Vertex. Fallback: ~4 chars ≈ 1 token.
  *
- * Product rule: the company's **first gig** AI draft is free (no balance check, no charge).
+ * Product rule: the company's **first gig package** (0 or 1 gig) AI is free
+ * (no balance check, no charge) — included in the subscription.
  * From the 2nd gig onward, prepaid AI tokens are required.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -95,14 +96,14 @@ function getOrchestratorApiBase() {
         'https://v25comporchestratorback-production.up.railway.app/api';
     return String(raw).replace(/\/$/, '');
 }
-/** True when the company has zero gigs yet → first-gig AI is free. */
+/** True while the company is still on its first gig package (0 or 1 gig). */
 async function isFirstGigForCompany(companyId) {
     const id = String(companyId || '').trim();
     if (!id)
         return true;
     try {
         const count = await gigModel_1.Gig.countDocuments({ companyId: id });
-        return count === 0;
+        return count <= 1;
     }
     catch (err) {
         console.warn('[aiTokenBilling] first-gig count failed (treating as first):', err);
@@ -142,7 +143,16 @@ async function chargeCompanyAiTokens(opts) {
     const id = String(opts.companyId || '').trim();
     if (!id)
         return { billed: false };
-    if (opts.skipCharge) {
+    let skip = Boolean(opts.skipCharge);
+    if (opts.skipCharge === undefined) {
+        try {
+            skip = await isFirstGigForCompany(id);
+        }
+        catch {
+            skip = false;
+        }
+    }
+    if (skip) {
         return { billed: false, firstGigFree: true };
     }
     const tokensUsed = Math.max(0, Math.round(opts.usage.totalTokens || 0));

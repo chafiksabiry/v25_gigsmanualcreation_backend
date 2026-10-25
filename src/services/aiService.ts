@@ -56,6 +56,28 @@ function isAnthropicModelNotFound(err: unknown): boolean {
   return status === 404 || msg.includes('not_found') || msg.includes('model:');
 }
 
+// ─── Typed LLM error ──────────────────────────────────────────────────────────
+export type LLMErrorCode =
+  | 'invalid_api_key'       // 401 – clé révoquée/invalide
+  | 'insufficient_quota'    // 429 quota dépassé
+  | 'rate_limit'            // 429 rate-limit
+  | 'model_not_supported'   // 400 – modèle ou option non supporté
+  | 'ai_unavailable'        // 5xx – service down
+  | 'all_providers_failed'  // OpenAI + Claude tous les deux KO
+  | 'unknown';
+
+export class LLMError extends Error {
+  constructor(
+    message: string,
+    public readonly code: LLMErrorCode,
+    public readonly httpStatus: number,
+    public readonly originalError?: unknown,
+  ) {
+    super(message);
+    this.name = 'LLMError';
+  }
+}
+
 /** Detect transient/failure errors where fallback to Claude makes sense */
 function shouldFallbackToClaude(err: unknown): boolean {
   if (!err) return false;
@@ -63,6 +85,9 @@ function shouldFallbackToClaude(err: unknown): boolean {
   const status: number | undefined = e?.status || e?.response?.status;
   const code: string | undefined = e?.code || e?.error?.code;
   const message: string = String(e?.message || e?.error?.message || '').toLowerCase();
+
+  // 401 invalid_api_key → key revoked, try Claude before giving up
+  if (status === 401 || code === 'invalid_api_key') return true;
 
   if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) return true;
   if (status === 400) {
@@ -88,6 +113,53 @@ function shouldFallbackToClaude(err: unknown): boolean {
     message.includes('socket hang up')
   ) return true;
   return false;
+}
+
+/** Convert a raw provider error into a typed LLMError */
+function classifyProviderError(err: unknown, provider: 'openai' | 'anthropic'): LLMError {
+  const e = err as any;
+  const status: number | undefined = e?.status || e?.response?.status;
+  const code: string | undefined = e?.code || e?.error?.code;
+  const message: string = String(e?.message || e?.error?.message || '');
+
+  if (status === 401 || code === 'invalid_api_key') {
+    return new LLMError(
+      `Clé API ${provider === 'openai' ? 'OpenAI' : 'Anthropic'} invalide ou révoquée. Veuillez contacter le support HARX.`,
+      'invalid_api_key',
+      503,
+      err,
+    );
+  }
+  if (status === 429 || code === 'rate_limit_exceeded') {
+    return new LLMError(
+      `Le service IA est temporairement surchargé. Réessayez dans quelques instants.`,
+      'rate_limit',
+      503,
+      err,
+    );
+  }
+  if (code === 'insufficient_quota') {
+    return new LLMError(
+      `Quota IA épuisé. Veuillez contacter le support HARX.`,
+      'insufficient_quota',
+      503,
+      err,
+    );
+  }
+  if (status && status >= 500) {
+    return new LLMError(
+      `Le service IA est temporairement indisponible. Réessayez dans quelques instants.`,
+      'ai_unavailable',
+      503,
+      err,
+    );
+  }
+  return new LLMError(
+    message || `Erreur inconnue du service IA (${provider}).`,
+    'unknown',
+    500,
+    err,
+  );
 }
 
 interface LLMResult {
@@ -164,14 +236,19 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
     };
   } catch (openaiError) {
     const fallback = shouldFallbackToClaude(openaiError);
-    console.error(`❌ Erreur OpenAI (fallback Claude = ${fallback}):`, (openaiError as any)?.message || openaiError);
+    const oaiCode = (openaiError as any)?.code || (openaiError as any)?.error?.code || '';
+    const oaiStatus = (openaiError as any)?.status || (openaiError as any)?.response?.status || 0;
+    console.error(
+      `❌ Erreur OpenAI [${oaiStatus}/${oaiCode}] (fallback Claude = ${fallback}):`,
+      (openaiError as any)?.message || openaiError,
+    );
 
-    if (!fallback) throw openaiError;
+    if (!fallback) throw classifyProviderError(openaiError, 'openai');
 
     const claude = getAnthropicClient();
     if (!claude) {
       console.error('⚠️ ANTHROPIC_API_KEY non configurée — impossible de basculer vers Claude');
-      throw openaiError;
+      throw classifyProviderError(openaiError, 'openai');
     }
 
     const claudeSystem = forceJson
@@ -217,7 +294,12 @@ async function callLLMWithFallback(opts: LLMChatOptions): Promise<LLMResult> {
     }
 
     console.error('❌ Tous les modèles Claude ont échoué:', (lastClaudeError as any)?.message || lastClaudeError);
-    throw lastClaudeError;
+    throw new LLMError(
+      'Le service IA est temporairement indisponible (OpenAI + Claude). Réessayez dans quelques instants.',
+      'all_providers_failed',
+      503,
+      lastClaudeError,
+    );
   }
 }
 
@@ -275,12 +357,26 @@ const MAX_RETRIES = 3;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+/** Codes that are never worth retrying (result won't change) */
+const FATAL_ERROR_CODES = new Set(['invalid_api_key', 'insufficient_quota', 'all_providers_failed']);
+
 async function retryWithBackoff(fn: () => Promise<any>, retries = MAX_RETRIES): Promise<any> {
   try {
     return await fn();
   } catch (error: any) {
-    if (error?.error?.code === 'rate_limit_exceeded' && retries > 0) {
+    // LLMError already classified — re-throw immediately if fatal
+    if (error instanceof LLMError && FATAL_ERROR_CODES.has(error.code)) throw error;
+
+    const code: string | undefined = error?.code || error?.error?.code;
+    const status: number | undefined = error?.status || error?.response?.status;
+
+    // Auth errors → no retry
+    if (status === 401 || code === 'invalid_api_key') throw error;
+
+    // Rate limit → retry with backoff
+    if ((code === 'rate_limit_exceeded' || status === 429) && retries > 0) {
       const delay = RETRY_DELAY * (MAX_RETRIES - retries + 1);
+      console.warn(`⏳ Rate limit — retry dans ${delay}ms (${retries} essais restants)`);
       await sleep(delay);
       return retryWithBackoff(fn, retries - 1);
     }

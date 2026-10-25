@@ -5,7 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const aiController_1 = require("../controllers/aiController");
+const audioMulter_1 = require("../config/audioMulter");
 const router = express_1.default.Router();
+// Transcribe spoken gig brief (Whisper) → text for generate-gig-suggestions
+router.post('/transcribe-audio', audioMulter_1.audioUpload.single('audio'), aiController_1.AIController.transcribeAudio);
 // Route pour générer des suggestions de gig complètes
 router.post('/generate-gig-suggestions', aiController_1.AIController.generateGigSuggestions);
 // Route pour générer des compétences
