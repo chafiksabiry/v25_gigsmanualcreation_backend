@@ -6,7 +6,7 @@ import countries from 'i18n-iso-countries';
 import { Lead } from "../models/leadModel";
 import { Country } from "../models/countryModel";
 import { Gig } from "../models/gigModel";
-import { resolveCompanyGigQuota } from "../services/planQuotaService";
+import { resolveCompanyGigQuota, resolveCompanyProduct } from "../services/planQuotaService";
 
 // Initialiser les pays en français et en anglais
 countries.registerLocale(require('i18n-iso-countries/langs/fr.json'));
@@ -174,8 +174,18 @@ export class GigController {
         String((updateData as any)?.status || '').toLowerCase() === 'active';
       /** True when this request transitions the gig into `active` (not a no-op re-save). */
       let becomingActive = false;
+      /**
+       * Produit Call Centre : l'opération est activée explicitement par le centre, qui contrôle sa configuration
+       * dans son application. Les contrôles propres au TaaS (étapes de configuration, portefeuille en euros, quota de
+       * gigs actifs) et la notification des reps de la place de marché ne s'appliquent pas.
+       */
+      let isCallCenterGig = false;
       if (wantsActive) {
         const existingGig = await GigService.getGigById(id);
+        if (existingGig?.companyId) {
+          const cid = String((existingGig as any).companyId._id || (existingGig as any).companyId);
+          isCallCenterGig = (await resolveCompanyProduct(cid)) === 'callcenter';
+        }
         if (existingGig) {
           // knowledgeBase is optional — a gig can be activated without one
           // (see cahier de recette ENT-08).
@@ -187,7 +197,7 @@ export class GigController {
             'sessionPlanning',
           ] as const;
           const steps = (existingGig as any).setupSteps || {};
-          const missingSteps = REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
+          const missingSteps = isCallCenterGig ? [] : REQUIRED_SETUP_KEYS.filter((k) => !steps[k]);
           if (missingSteps.length > 0) {
             console.log(
               `❌ BACKEND - Cannot activate gig ${id}: missing setup steps:`,
@@ -215,6 +225,7 @@ export class GigController {
 
           // Wallet check — soft-fail if escrow service is unreachable
           try {
+            if (!isCallCenterGig) {
             const compOrchestratorUrl =
               process.env.COMPORCHESTRATOR_BACK_URL ||
               'https://v25comporchestratorback-production.up.railway.app';
@@ -248,6 +259,7 @@ export class GigController {
                 `⚠️ BACKEND - Escrow wallet API returned non-OK status: ${balanceResponse.status}`
               );
             }
+            }
           } catch (balanceErr) {
             console.error(
               '⚠️ BACKEND - Failed to verify company balance:',
@@ -259,7 +271,7 @@ export class GigController {
           // Optional body.deactivateGigIds: switch (deactivate those, then activate).
           const alreadyActive =
             String((existingGig as any).status || '').toLowerCase() === 'active';
-          if (!alreadyActive) {
+          if (!alreadyActive && !isCallCenterGig) {
             const rawDeactivate = Array.isArray(
               (updateData as any).deactivateGigIds
             )
@@ -393,7 +405,7 @@ export class GigController {
       }
 
       // New active project → auto-match and notify REPs with score ≥ 50%.
-      if (becomingActive && nextStatus === 'active') {
+      if (becomingActive && nextStatus === 'active' && !isCallCenterGig) {
         try {
           const { triggerMatchingNotificationsForGig } = await import(
             '../services/repNotificationClient'

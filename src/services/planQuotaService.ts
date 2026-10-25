@@ -53,6 +53,32 @@ function resolveMaxGigs(raw: unknown, metadata: unknown): number {
   return Math.round(n);
 }
 
+/**
+ * Produit du forfait actif de la société (metadata Stripe `harx_product`, ex. `callcenter`), null pour le TaaS ou
+ * si l'abonnement est introuvable. Le produit Call Centre active ses opérations lui-même (sans les contrôles TaaS).
+ */
+export async function resolveCompanyProduct(companyId: string): Promise<string | null> {
+  const url = `${orchestratorBaseUrl()}/api/subscriptions/current/${companyId}`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      limits?: { metadata?: Record<string, string> };
+      data?: { planId?: { metadata?: Record<string, string> } | string };
+    };
+    const plan = json?.data?.planId && typeof json.data.planId === 'object' ? json.data.planId : null;
+    const metadata = (plan?.metadata || json?.limits?.metadata || {}) as Record<string, unknown>;
+    const entry = Object.entries(metadata).find(([k]) => k.trim().toLowerCase() === 'harx_product');
+    return entry ? String(entry[1] ?? '').trim().toLowerCase() || null : null;
+  } catch (err) {
+    console.warn('[planQuota] Failed to resolve company product:', err);
+    return null;
+  }
+}
+
 export async function resolveCompanyGigQuota(companyId: string): Promise<PlanQuota> {
   const base = orchestratorBaseUrl();
   const url = `${base}/api/subscriptions/current/${companyId}`;
