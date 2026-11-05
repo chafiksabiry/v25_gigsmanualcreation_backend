@@ -3,6 +3,8 @@
  * The metadata number is used as-is. Missing metadata stays at 1.
  */
 
+import { signServiceToken } from '../utils/aiTokenBilling';
+
 export type ActiveGigSummary = {
   _id: string;
   title: string;
@@ -25,6 +27,15 @@ function orchestratorBaseUrl(): string {
     process.env.COMPORCHESTRATOR_BACK_URL ||
     'https://v25comporchestratorback-production.up.railway.app';
   return String(raw).replace(/\/$/, '').replace(/\/api$/i, '');
+}
+
+/**
+ * En-têtes de la lecture de l'abonnement : l'orchestrateur exige une session ; ce service s'y présente avec un jeton de
+ * service (secret partagé) limité à l'entreprise lue. Sans JWT_SECRET, aucun en-tête (la lecture sera refusée).
+ */
+function subscriptionReadHeaders(companyId: string): Record<string, string> {
+  if (!process.env.JWT_SECRET) return {};
+  return { Authorization: `Bearer ${signServiceToken(process.env.JWT_SECRET, { service: 'gigs', companyId: String(companyId) })}` };
 }
 
 function metadataNumber(metadata: unknown, prefixes: string[]): number | null {
@@ -62,7 +73,7 @@ export async function resolveCompanyProduct(companyId: string): Promise<string |
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal, headers: subscriptionReadHeaders(companyId) });
     clearTimeout(timer);
     if (!res.ok) return null;
     const json = (await res.json()) as {
@@ -85,7 +96,7 @@ export async function resolveCompanyGigQuota(companyId: string): Promise<PlanQuo
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal, headers: subscriptionReadHeaders(companyId) });
     clearTimeout(timer);
     if (res.ok) {
       const json = (await res.json()) as {
