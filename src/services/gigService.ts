@@ -4,6 +4,8 @@ import { GigRepository } from '../repositories/gigRepository';
 import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFacing";
 import { Language } from "../models/languageModel";
 import axios from 'axios';
+import { resolveCompanyProduct } from './planQuotaService';
+import { companyIdOf, filterGigsForReps, productsForCompanies } from '../utils/marketplaceAudience';
 // Import des modèles pour le populate
 import { Sector } from '../models/sectorModel';
 import { Activity } from '../models/activityModel';
@@ -228,7 +230,7 @@ export class GigService {
     }
   }
 
-  static async getActiveGigs() {
+  static async getActiveGigs(opts: { audience?: string } = {}) {
     try {
       const activeGigs = await Gig.find({ status: 'active' })
         .populate('sectors')
@@ -243,6 +245,12 @@ export class GigService {
         .populate('skills.soft.skill')
         .populate('skills.languages.language')
         .populate('companyId');
+      // Place de marché des REPS : on ne garde que les opérations des clients TaaS (pas celles des clients Téléphonie).
+      if (opts.audience === 'reps') {
+        const ids = Array.from(new Set(activeGigs.map((g) => companyIdOf(g as any)).filter((id): id is string => Boolean(id))));
+        const products = await productsForCompanies(ids, resolveCompanyProduct);
+        return enrichGigsForApi(filterGigsForReps(activeGigs, products));
+      }
       return enrichGigsForApi(activeGigs);
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
