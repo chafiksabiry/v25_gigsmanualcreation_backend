@@ -75,15 +75,25 @@ export async function resolveCompanyProduct(companyId: string): Promise<string |
     const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(url, { signal: controller.signal, headers: subscriptionReadHeaders(companyId) });
     clearTimeout(timer);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[planQuota] product lookup company=${companyId}: HTTP ${res.status} from ${orchestratorBaseUrl()}`);
+      return null;
+    }
     const json = (await res.json()) as {
+      success?: boolean;
       limits?: { metadata?: Record<string, string> };
       data?: { planId?: { metadata?: Record<string, string> } | string };
     };
+    if (json?.success === false) {
+      console.warn(`[planQuota] product lookup company=${companyId}: no subscription`);
+      return null;
+    }
     const plan = json?.data?.planId && typeof json.data.planId === 'object' ? json.data.planId : null;
     const metadata = (plan?.metadata || json?.limits?.metadata || {}) as Record<string, unknown>;
     const entry = Object.entries(metadata).find(([k]) => k.trim().toLowerCase() === 'harx_product');
-    return entry ? String(entry[1] ?? '').trim().toLowerCase() || null : null;
+    const product = entry ? String(entry[1] ?? '').trim().toLowerCase() || null : null;
+    console.log(`[planQuota] product lookup company=${companyId}: product=${product ?? 'none'}`);
+    return product;
   } catch (err) {
     console.warn('[planQuota] Failed to resolve company product:', err);
     return null;
