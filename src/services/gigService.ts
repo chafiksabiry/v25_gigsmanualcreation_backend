@@ -5,6 +5,7 @@ import { enrichGigForApi, enrichGigsForApi } from "../utils/gigCommissionAgentFa
 import { Language } from "../models/languageModel";
 import axios from 'axios';
 import { resolveCompanyProduct } from './planQuotaService';
+import { productsFromDb } from './companyProductDb';
 import { companyIdOf, filterGigsForReps, productsForCompanies } from '../utils/marketplaceAudience';
 // Import des modèles pour le populate
 import { Sector } from '../models/sectorModel';
@@ -248,7 +249,12 @@ export class GigService {
       // Place de marché des REPS : on ne garde que les opérations des clients TaaS (pas celles des clients Téléphonie).
       if (opts.audience === 'reps') {
         const ids = Array.from(new Set(activeGigs.map((g) => companyIdOf(g as any)).filter((id): id is string => Boolean(id))));
-        const products = await productsForCompanies(ids, resolveCompanyProduct);
+        // Lecture directe dans la base partagée (le jeton de service vers l'orchestrateur est refusé en recette) ; à défaut, appel HTTP.
+        const products = await productsFromDb(ids).catch((err) => {
+          console.warn('[marketplace] product lookup from database failed, falling back to HTTP:', err?.message || err);
+          return null;
+        }) ?? (await productsForCompanies(ids, resolveCompanyProduct));
+        console.log(`[marketplace] reps audience: ${ids.length} companies, telephony=${[...products.values()].filter((v) => v === 'callcenter').length}`);
         return enrichGigsForApi(filterGigsForReps(activeGigs, products));
       }
       return enrichGigsForApi(activeGigs);
