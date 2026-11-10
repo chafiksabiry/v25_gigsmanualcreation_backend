@@ -104,7 +104,8 @@ export class GigController {
 
   static async getActiveGigs(req: Request, res: Response) {
     try {
-      const activeGigs = await GigService.getActiveGigs();
+      const audience = typeof req.query?.audience === 'string' ? req.query.audience : undefined;
+      const activeGigs = await GigService.getActiveGigs({ audience });
       res.status(200).json({ message: "Active gigs retrieved successfully", data: activeGigs });
     } catch (error) {
       console.error("Error in getActiveGigs:", error);
