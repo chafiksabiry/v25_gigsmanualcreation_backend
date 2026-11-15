@@ -7,6 +7,7 @@ import { PopulateService } from '../services/populateService';
 import {
   assertCompanyHasAiTokens,
   chargeCompanyAiTokens,
+  tokenGateErrorResponse,
   resolveUsageOrEstimate,
 } from '../utils/aiTokenBilling';
 
@@ -229,14 +230,9 @@ export class AIController {
       const billingCompanyId = String(req.body?.companyId || '').trim() || undefined;
       const tokenGate = await assertCompanyHasAiTokens(billingCompanyId, 1);
       if (!tokenGate.ok) {
-        return res.status(402).json({
-          success: false,
-          error: 'insufficient_tokens',
-          message: tokenGate.message,
-          data: { tokens: tokenGate.tokens },
-        });
+        const refusal = tokenGateErrorResponse(tokenGate);
+        return res.status(refusal.status).json(refusal.body);
       }
-      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       const language =
         (typeof req.body?.language === 'string' && req.body.language) ||
@@ -258,8 +254,7 @@ export class AIController {
         usageId: `gig-transcribe-${Date.now()}`,
         usage,
         tool: 'gig.transcribe_audio',
-        meta: { fileName: file.originalname, mime: file.mimetype, firstGigFree },
-        skipCharge: firstGigFree,
+        meta: { fileName: file.originalname, mime: file.mimetype },
       });
 
       return res.status(200).json({
@@ -268,8 +263,8 @@ export class AIController {
         usage: {
           ...usage,
           billed: charge.billed,
+          charged: charge.charged,
           balance: charge.tokens,
-          firstGigFree,
         },
       });
     } catch (error: any) {
@@ -312,15 +307,9 @@ export class AIController {
       const billingCompanyId = String(companyId || '').trim() || undefined;
       const tokenGate = await assertCompanyHasAiTokens(billingCompanyId, 1);
       if (!tokenGate.ok) {
-        return res.status(402).json({
-          success: false,
-          error: 'insufficient_tokens',
-          message: tokenGate.message,
-          data: { tokens: tokenGate.tokens },
-        });
+        const refusal = tokenGateErrorResponse(tokenGate);
+        return res.status(refusal.status).json(refusal.body);
       }
-      // First gig for the company: AI draft is free. From the 2nd gig → tokens required.
-      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
       const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
@@ -373,8 +362,7 @@ export class AIController {
         tool: 'gig.generate_suggestions',
         // Gig not created yet — ledger row without gigId; linked later if needed
         gigId: null,
-        meta: { source: 'gig_creation_prompt', firstGigFree },
-        skipCharge: firstGigFree,
+        meta: { source: 'gig_creation_prompt' },
       });
 
       res.status(200).json({
@@ -382,8 +370,8 @@ export class AIController {
         usage: {
           ...usage,
           billed: charge.billed,
+          charged: charge.charged,
           balance: charge.tokens,
-          firstGigFree,
         },
       });
     } catch (error: any) {
@@ -498,14 +486,9 @@ export class AIController {
       const billingCompanyId = String(companyId || '').trim() || undefined;
       const tokenGate = await assertCompanyHasAiTokens(billingCompanyId, 1);
       if (!tokenGate.ok) {
-        return res.status(402).json({
-          success: false,
-          error: 'insufficient_tokens',
-          message: tokenGate.message,
-          data: { tokens: tokenGate.tokens },
-        });
+        const refusal = tokenGateErrorResponse(tokenGate);
+        return res.status(refusal.status).json(refusal.body);
       }
-      const firstGigFree = Boolean(tokenGate.firstGigFree);
 
       // Récupérer les données réelles depuis l'API externe et notre base de données
       const [activitiesData, industriesData, languagesData, skillsData, timezonesData, countriesData, currenciesData] = await Promise.all([
@@ -558,8 +541,7 @@ export class AIController {
         usage,
         tool: 'gig.analyze_title',
         gigId: null,
-        meta: { source: 'gig_title_analysis', firstGigFree },
-        skipCharge: firstGigFree,
+        meta: { source: 'gig_title_analysis' },
       });
 
       res.status(200).json({
@@ -567,8 +549,8 @@ export class AIController {
         usage: {
           ...usage,
           billed: charge.billed,
+          charged: charge.charged,
           balance: charge.tokens,
-          firstGigFree,
         },
       });
     } catch (error: any) {
