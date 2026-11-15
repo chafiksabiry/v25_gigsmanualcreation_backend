@@ -6,6 +6,7 @@
     "start": "node dist/server.js",
     "dev": "nodemon --exec npx ts-node src/server.ts",
     "build": "node node_modules/typescript/lib/tsc.js",
+    "test": "node node_modules/typescript/lib/tsc.js --outDir .test-out --rootDir . --module commonjs --target ES2020 --esModuleInterop --skipLibCheck --strict tests/aiTokenBilling.test.ts && node --test .test-out/tests/aiTokenBilling.test.js",
     "backfill:setup-steps": "ts-node src/scripts/backfillSetupSteps.ts",
     "backfill:setup-steps:dry": "ts-node src/scripts/backfillSetupSteps.ts --dry-run",
     "backfill:setup-steps:force": "ts-node src/scripts/backfillSetupSteps.ts --force"
