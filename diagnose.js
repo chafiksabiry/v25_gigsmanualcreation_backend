@@ -2,7 +2,11 @@
 const mongoose = require('mongoose');
 
 // Correct URI provided by user
-const mongoUri = 'mongodb://mongo:DiGaBWUZXCkIxlZMuntztBaFJcOlUJIg@maglev.proxy.rlwy.net:40270/harx?authSource=admin';
+const mongoUri = process.env.MONGODB_URI;
+if (!mongoUri) {
+  console.error('MONGODB_URI environment variable is required (set it in your shell, never in the code).');
+  process.exit(1);
+}
 
 async function diagnose() {
     try {
